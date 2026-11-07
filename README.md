@@ -54,6 +54,6 @@ python -m pytest            # unit + API tests, no Hermes install needed beyond 
 hermes plugins validate . --install-deps
 ```
 
-Tested on Hermes Agent v0.23.0 (Linux / WSL2 Docker). Windows and macOS are untested.
+Tested on Hermes Agent v0.23.0 on Linux (WSL2 Docker) and macOS. Native Windows is untested.
 
 MIT License.

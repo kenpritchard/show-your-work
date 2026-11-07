@@ -4,7 +4,7 @@ description: "Acceptance-criteria evidence board: which requirements your agent 
 author: kenpritchard
 license: MIT
 requires_hermes: ">=0.23.0"
-platforms: [linux]
+platforms: [linux, macos]
 provides_tools:
   - syw_board
   - syw_link
