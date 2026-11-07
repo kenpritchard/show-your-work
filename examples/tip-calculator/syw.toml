@@ -1,0 +1,2 @@
+criteria_file = "criteria.md"
+tracked = ["src/**/*.py", "tests/**/*.py"]
