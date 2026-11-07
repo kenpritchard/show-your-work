@@ -1,0 +1,12 @@
+name: show-your-work
+version: "0.0.1"
+description: "Acceptance-criteria evidence board: which requirements your agent actually tested, what the imported results say, whether they are still current, and whether a human signed off."
+author: kenpritchard
+license: MIT
+requires_hermes: ">=0.23.0"
+platforms: [linux]
+provides_tools:
+  - syw_ping
+provides_hooks: []
+provides_middleware: []
+requires_env: []
