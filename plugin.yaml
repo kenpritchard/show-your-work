@@ -6,7 +6,10 @@ license: MIT
 requires_hermes: ">=0.23.0"
 platforms: [linux]
 provides_tools:
-  - syw_ping
+  - syw_board
+  - syw_link
+  - syw_import
+  - syw_run_detail
 provides_hooks: []
 provides_middleware: []
 requires_env: []
