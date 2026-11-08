@@ -45,7 +45,7 @@ TOOL_SCHEMAS = {
     "syw_import": {
         "name": "syw_import",
         "description": (
-            "Import a JUnit XML test report (max 5 MB) from inside the project folder as a new, "
+            "Import a JUnit XML test report (max 5 MB), or a folder of them such as Maven target/surefire-reports, from inside the project folder as ONE new, "
             "append-only run. Records the report hash and a fingerprint of the tracked files. Run "
             "the tests yourself first (e.g. `pytest --junitxml=report.xml`). This tool runs nothing. "
             "Note: a harness exit code of 0 does not mean the tests passed; import and read the board."
@@ -55,7 +55,7 @@ TOOL_SCHEMAS = {
             "properties": {
                 "project": _PROJECT,
                 "report_path": {"type": "string", "maxLength": 1024,
-                                "description": "Path relative to the project folder."},
+                                "description": "File or folder path relative to the project folder."},
             },
             "required": ["project", "report_path"],
             "additionalProperties": False,

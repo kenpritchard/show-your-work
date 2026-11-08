@@ -161,3 +161,43 @@ def test_board_lists_links_to_requirements_that_no_longer_exist(svc, proj):
     svc.link(proj, "R3", ["t::test_a"], by="agent")
     (proj / "criteria.md").write_text("- [R1] first\n- [R2] second\n")
     assert svc.board(proj)["orphan_links"] == [{"requirement": "R3", "test_id": "t::test_a"}]
+
+
+def test_import_a_folder_of_reports_as_one_run(svc, proj):
+    d = proj / "reports"
+    d.mkdir()
+    (d / "TEST-a.xml").write_bytes(b'<testsuite><testcase classname="t" name="test_a"/></testsuite>')
+    (d / "TEST-b.xml").write_bytes(b'<testsuite><testcase classname="t" name="test_b"><failure message="boom"/></testcase></testsuite>')
+    (d / "notes.txt").write_text("ignored")
+    svc.link(proj, "R1", ["t::test_a"], by="agent")
+    svc.link(proj, "R2", ["t::test_b"], by="agent")
+    out = svc.import_report(proj, "reports")
+    assert out["tests"] == 2 and len(svc.runs(proj)) == 1
+    b = rows(svc.board(proj))
+    assert (b["R1"]["outcome"], b["R2"]["outcome"]) == ("pass", "fail")
+
+
+def test_bad_file_in_report_folder_names_the_file(svc, proj):
+    d = proj / "reports"
+    d.mkdir()
+    (d / "TEST-bad.xml").write_bytes(b"<testsuite><testcase")
+    with pytest.raises(ValueError, match="TEST-bad.xml"):
+        svc.import_report(proj, "reports")
+
+
+def test_empty_report_folder_is_an_error(svc, proj):
+    (proj / "reports").mkdir()
+    with pytest.raises(ProjectError, match="no .xml"):
+        svc.import_report(proj, "reports")
+
+
+def test_report_older_than_code_is_freshness_unknown(svc, proj):
+    import os
+    write(proj, "r.xml", PASS_ALL)
+    old = (proj / "src" / "app.py").stat().st_mtime - 3600
+    os.utime(proj / "r.xml", (old, old))
+    svc.link(proj, "R1", ["t::test_a"], by="agent")
+    out = svc.import_report(proj, "r.xml")
+    assert out["warnings"] and "older" in out["warnings"][0]
+    r1 = rows(svc.board(proj))["R1"]
+    assert (r1["outcome"], r1["freshness"]) == ("pass", "unknown")

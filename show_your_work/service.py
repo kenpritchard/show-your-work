@@ -19,13 +19,18 @@ from pathlib import Path
 
 from . import store
 from .junit import parse_junit
-from .project import Project, ProjectError, _inside, fingerprint, load_project
+from .project import Project, ProjectError, _inside, fingerprint, load_project, tracked_files
 
 DECISIONS = ("accepted", "rejected")
 PROVENANCE = ("agent-imported", "human-imported", "external")
 # Higher rank = worse. "not run" counts as worse than skipped: a linked test that didn't run is a gap.
 _RANK = {"pass": 0, "skipped": 1, "not run": 2, "error": 3, "fail": 4}
 MAX_NOTE = 1000
+MAX_REPORT_FILES = 500
+MAX_FOLDER_BYTES = 50 * 1024 * 1024
+# Marks a run whose report files are older than the newest tracked file: the plugin cannot tell
+# which code it tested, so freshness is "unknown", never "current".
+OLDER_REPORT = "older-report:"
 
 
 def _now() -> str:
@@ -88,17 +93,48 @@ class Service:
             raise ValueError(f"provenance must be one of {PROVENANCE}")
         project = self._project(root)
         path = _inside(project.root, report_path, "report path")
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink() or not path.exists():
             raise ProjectError(f"report not found: {report_path}")
-        data = path.read_bytes()
-        results = parse_junit(data)
+        if path.is_dir():
+            # A folder of reports (Maven surefire/failsafe write one file per test class) = one run.
+            files = sorted(p for p in path.glob("*.xml") if p.is_file() and not p.is_symlink())
+            if not files:
+                raise ProjectError(f"no .xml reports in folder: {report_path}")
+            if len(files) > MAX_REPORT_FILES:
+                raise ProjectError(f"more than {MAX_REPORT_FILES} report files in {report_path}")
+            digest = hashlib.sha256()
+            results, total = [], 0
+            for f in files:
+                data = f.read_bytes()
+                total += len(data)
+                if total > MAX_FOLDER_BYTES:
+                    raise ValueError(f"reports in {report_path} exceed {MAX_FOLDER_BYTES // (1024 * 1024)} MB")
+                try:
+                    results.extend(parse_junit(data))
+                except ValueError as exc:
+                    raise ValueError(f"{f.name}: {exc}") from None
+                digest.update(f.name.encode() + b"\0" + hashlib.sha256(data).digest())
+            report_sha = digest.hexdigest()
+            report_mtime = max(f.stat().st_mtime for f in files)
+        else:
+            data = path.read_bytes()
+            results = parse_junit(data)
+            report_sha = hashlib.sha256(data).hexdigest()
+            report_mtime = path.stat().st_mtime
         fp = fingerprint(project)
+        newest_code = max((p.stat().st_mtime for p in tracked_files(project)), default=0.0)
+        warnings = []
+        code_digest = fp.digest
+        if newest_code > report_mtime:
+            code_digest = OLDER_REPORT + fp.digest
+            warnings.append("report is older than the newest tracked file, so it may not have tested the "
+                            "current code; freshness will show 'unknown'. Rerun the tests and import again.")
         run_id = uuid.uuid4().hex[:12]
         with self._lock, self.conn:
             self.conn.execute(
                 "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?)",
                 (run_id, self._key(project), _now(), path.relative_to(project.root).as_posix(),
-                 hashlib.sha256(data).hexdigest(), provenance, fp.digest, fp.file_count, len(results)),
+                 report_sha, provenance, code_digest, fp.file_count, len(results)),
             )
             self.conn.executemany(
                 "INSERT INTO results VALUES (?,?,?,?,?)",
@@ -107,7 +143,7 @@ class Service:
         counts: dict[str, int] = {}
         for r in results:
             counts[r.outcome] = counts.get(r.outcome, 0) + 1
-        return {"run_id": run_id, "tests": len(results), "counts": counts}
+        return {"run_id": run_id, "tests": len(results), "counts": counts, "warnings": warnings}
 
     # ---------- human only (never exposed as an agent tool) ----------
 
@@ -145,8 +181,10 @@ class Service:
         ):
             links.setdefault(row["requirement"], []).append(row["test_id"])
 
-        freshness_run = "unknown" if run is None else (
-            "current" if run["code_digest"] == fp.digest else "stale")
+        if run is None or run["code_digest"].startswith(OLDER_REPORT):
+            freshness_run = "unknown"
+        else:
+            freshness_run = "current" if run["code_digest"] == fp.digest else "stale"
 
         reqs = []
         for c in project.criteria:
