@@ -14,6 +14,10 @@ MAX_REPORT_BYTES = 5 * 1024 * 1024
 MAX_MESSAGE_CHARS = 2000
 
 
+class NotJUnit(ValueError):
+    """Well-formed XML that isn't a JUnit report (e.g. Maven's failsafe-summary.xml)."""
+
+
 @dataclass(frozen=True)
 class TestResult:
     test_id: str  # "classname::name", or just "name" when there is no classname
@@ -49,7 +53,7 @@ def parse_junit(data: bytes) -> list[TestResult]:
     except Exception as exc:  # ParseError and friends
         raise ValueError(f"not valid JUnit XML: {exc}") from None
     if root.tag not in ("testsuites", "testsuite"):
-        raise ValueError(f"not valid JUnit XML: unexpected root <{root.tag}>")
+        raise NotJUnit(f"not valid JUnit XML: unexpected root <{root.tag}>")
     results = [
         TestResult(_test_id(case), *_outcome(case))
         for case in root.iter("testcase")

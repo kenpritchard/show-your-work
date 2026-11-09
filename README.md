@@ -2,7 +2,7 @@
 
 **Your agent says it's done. Which requirements did it actually test, and have you signed off on them?**
 
-Show Your Work is a Hermes Agent plugin that keeps an evidence board for a project's acceptance criteria. For every requirement it shows four **separate** answers. They are never merged into one green check:
+Show Your Work is a [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that keeps an evidence board for a project's acceptance criteria. For every requirement it shows four **separate** answers. They are never merged into one green check:
 
 | Column | Question | Values |
 |---|---|---|
@@ -13,17 +13,42 @@ Show Your Work is a Hermes Agent plugin that keeps an evidence board for a proje
 
 Why it exists: "the command exited 0" is not "the requirement is met". Some test harnesses exit 0 even when tests fail, a linked test may not check what the requirement says, and yesterday's pass says nothing about today's code.
 
-## How it works
+**Full guide: [docs/USAGE.md](docs/USAGE.md)**: setup, test runners, reading the board, sign-off, the Desktop page, reference, limits and troubleshooting.
 
-1. Put a `syw.toml` and a criteria file in the project:
+## Install
+
+```bash
+hermes plugins install kenpritchard/show-your-work --enable     # add -p <profile> for a named profile
+hermes plugins doctor show-your-work                            # expect 4 tools registered
+```
+
+In **Hermes Desktop**: Capabilities → Plugins → **Install from Git** → `kenpritchard/show-your-work`, and tick both **Agent** and **Desktop**. That's the only way to get the board page when Desktop talks to a remote or Docker backend.
+
+On native Windows, `hermes plugins install` can fail with `WinError 32` (a Hermes installer bug). See the [manual install](docs/USAGE.md#native-windows-installer-workaround).
+
+After an **update**, restart the process that runs plugins. For Desktop that's the dashboard backend, not just the gateway. See [Update](docs/USAGE.md#update).
+
+## Quickstart (5 minutes)
+
+1. In your project folder, add a `syw.toml`:
    ```toml
-   criteria_file = "criteria.md"          # lines like:  - [R1] The default tip is 15%
-   tracked = ["src/**/*.py", "tests/**/*.py"]
+   criteria_file = "criteria.md"
+   tracked = ["src/**/*.py", "tests/**/*.py"]     # changes here make results stale
    ```
-2. The agent links tests to requirements (`syw_link`), runs the tests the normal way with JUnit XML output (`pytest --junitxml=report.xml`), and imports the report (`syw_import`). Reports can come from anywhere: a Docker harness, CI, or a command you ran yourself.
-3. You open **Show Your Work** in the Hermes Desktop sidebar (or `/syw`, or `hermes syw board`), inspect failures, and **Accept** or **Reject** each requirement.
-4. Change a tracked file and results and sign-offs flip to *stale*. Edit a requirement's wording and its sign-off goes stale.
-5. Export a Markdown review report (`/syw export`, `hermes syw export`, or the Desktop button).
+   and a `criteria.md` with one requirement per line:
+   ```markdown
+   - [R1] The default tip is 15% of the bill
+   - [R2] The total can be split evenly between several people
+   ```
+2. Ask your agent:
+   > Use the show-your-work workflow on /abs/path/to/project: run the tests with `pytest --junitxml=report.xml`, import the report, link each test to the requirement it really checks (leave doubtful ones unlinked and say why), then show me the board.
+
+   Maven, Gradle, Jest, Vitest, Go and .NET work too, see [test runners](docs/USAGE.md#4-get-junit-xml-from-your-test-runner). A folder of reports (e.g. `target/surefire-reports`) imports as one run.
+3. Open **Show Your Work** in the Desktop sidebar (or `/syw`, or `hermes syw board`). Inspect failures and **Accept** or **Reject** each requirement.
+4. Change a tracked file and results and sign-offs flip to *stale*. Rerun, re-import, re-review.
+5. `/syw export` (or `hermes syw export`, or the Desktop button) writes a Markdown review report.
+
+Or try the sample in [`examples/tip-calculator`](examples/tip-calculator): a deliberate bug, a misspellable link, and an untested requirement. It's walked through in the [guide](docs/USAGE.md#16-walkthrough-the-tip-calculator-sample).
 
 ## Surfaces
 
@@ -33,15 +58,21 @@ Why it exists: "the command exited 0" is not "the requirement is met". Some test
 - **Desktop page:** board, per-requirement detail with failure messages, Accept/Reject with a note, export.
 - **Bundled skill:** `show-your-work:workflow` teaches the agent the flow.
 
-Try it on the sample in [`examples/tip-calculator`](examples/tip-calculator). It has a deliberate bug and one untested requirement.
-
 ## Disclosure
 
-- **Reads** the `syw.toml`, the criteria file, the files matched by `tracked` (to hash them), and JUnit XML files you or the agent name. All of these must be inside the project folder. Symlinks and paths outside the project are refused. Reports are capped at 5 MB and parsed with `defusedxml` (DTD entities refused).
+- **Reads** the `syw.toml`, the criteria file, the files matched by `tracked` (to hash them), and JUnit XML files or folders you or the agent name. All of these must be inside the project folder. Symlinks and paths outside the project are refused. Reports are capped at 5 MB per file (500 files / 50 MB per folder) and parsed with `defusedxml` (entities refused).
 - **Stores** links, imported results (test ids, outcomes, failure messages up to 2,000 chars), report hashes, file-set hashes and reviews in SQLite at `<HERMES_HOME>/plugin-data/show-your-work/data.db`. Runs and reviews are append-only.
 - **Writes** `show-your-work-review.md` into the project folder only when you export.
 - **Runs nothing.** No subprocesses, no network calls, no model calls, no telemetry.
-- **Limits:** a link is a coverage claim, not proof the test is adequate. A review is a local record, not a cryptographic signature: anyone with access to the profile's files could edit the database. "Human" means the sign-off came from a human surface (Desktop page, typed slash command, CLI), not the agent's tools.
+
+## Limits
+
+- A link is a coverage claim, not proof the test is adequate. That's what your review is for.
+- "Human-only" sign-off means the agent's **tools** can't review. `hermes syw accept` is an ordinary terminal command, so an agent with a terminal tool could run it; the review would be recorded as `human:cli`. Treat sign-off as a strong convention, not a lock.
+- Reviews are local records, not signatures: anyone who can write to the profile's files could edit the database.
+- Freshness compares file contents. The "report is older than the code" warning compares file modification times, which copying or touching files can fool.
+
+More in [Limits and honest caveats](docs/USAGE.md#14-limits-and-honest-caveats).
 
 ## Related plugins
 
@@ -50,10 +81,10 @@ Try it on the sample in [`examples/tip-calculator`](examples/tip-calculator). It
 ## Development
 
 ```bash
-python -m pytest            # unit + API tests, no Hermes install needed beyond its venv packages
-hermes plugins validate . --install-deps
+python -m pytest                         # unit + API tests, needs Hermes's venv packages
+hermes plugins validate .
 ```
 
-Tested on Hermes Agent v0.23.0 on Linux (WSL2 Docker) and macOS. Native Windows is untested.
+Tested on Hermes Agent v0.23.0: Linux (WSL2 Docker), macOS, and native Windows (CLI; installer workaround needed).
 
 MIT License.

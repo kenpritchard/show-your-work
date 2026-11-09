@@ -167,6 +167,8 @@ def cli_run(args):
                 if Path(args.report).is_absolute() else args.report
             out = service().import_report(root, rel, provenance="human-imported")
             print(f"Imported run {out['run_id']}: {out['tests']} tests {out['counts']}")
+            for w in out.get("warnings", []):
+                print(f"warning: {w}")
         elif cmd in ("accept", "reject"):
             root = _find_project(Path(args.project).resolve())
             decision = "accepted" if cmd == "accept" else "rejected"

@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import store
-from .junit import parse_junit
+from .junit import NotJUnit, parse_junit
 from .project import Project, ProjectError, _inside, fingerprint, load_project, tracked_files
 
 DECISIONS = ("accepted", "rejected")
@@ -103,7 +103,7 @@ class Service:
             if len(files) > MAX_REPORT_FILES:
                 raise ProjectError(f"more than {MAX_REPORT_FILES} report files in {report_path}")
             digest = hashlib.sha256()
-            results, total = [], 0
+            results, total, skipped = [], 0, []
             for f in files:
                 data = f.read_bytes()
                 total += len(data)
@@ -111,9 +111,15 @@ class Service:
                     raise ValueError(f"reports in {report_path} exceed {MAX_FOLDER_BYTES // (1024 * 1024)} MB")
                 try:
                     results.extend(parse_junit(data))
+                except NotJUnit:
+                    # Other XML in a report folder (Maven failsafe-summary.xml) is not a test report.
+                    skipped.append(f.name)
+                    continue
                 except ValueError as exc:
                     raise ValueError(f"{f.name}: {exc}") from None
                 digest.update(f.name.encode() + b"\0" + hashlib.sha256(data).digest())
+            if not results:
+                raise ProjectError(f"no JUnit reports in folder: {report_path}")
             report_sha = digest.hexdigest()
             report_mtime = max(f.stat().st_mtime for f in files)
         else:
@@ -124,6 +130,9 @@ class Service:
         fp = fingerprint(project)
         newest_code = max((p.stat().st_mtime for p in tracked_files(project)), default=0.0)
         warnings = []
+        if path.is_dir() and skipped:
+            warnings.append(f"skipped {len(skipped)} non-JUnit XML file(s): {', '.join(skipped[:5])}"
+                            + (" ..." if len(skipped) > 5 else ""))
         code_digest = fp.digest
         if newest_code > report_mtime:
             code_digest = OLDER_REPORT + fp.digest

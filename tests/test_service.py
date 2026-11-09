@@ -201,3 +201,27 @@ def test_report_older_than_code_is_freshness_unknown(svc, proj):
     assert out["warnings"] and "older" in out["warnings"][0]
     r1 = rows(svc.board(proj))["R1"]
     assert (r1["outcome"], r1["freshness"]) == ("pass", "unknown")
+
+
+def test_folder_import_skips_non_junit_xml(svc, proj):
+    d = proj / "failsafe-reports"
+    d.mkdir()
+    (d / "TEST-a.xml").write_bytes(b'<testsuite><testcase classname="t" name="test_a"/></testsuite>')
+    (d / "failsafe-summary.xml").write_bytes(b"<failsafe-summary result='0'><completed>1</completed></failsafe-summary>")
+    out = svc.import_report(proj, "failsafe-reports")
+    assert out["tests"] == 1
+    assert any("failsafe-summary.xml" in w for w in out["warnings"])
+
+
+def test_folder_with_only_non_junit_xml_is_an_error(svc, proj):
+    d = proj / "r"
+    d.mkdir()
+    (d / "summary.xml").write_bytes(b"<summary/>")
+    with pytest.raises(ProjectError, match="no JUnit reports"):
+        svc.import_report(proj, "r")
+
+
+def test_single_non_junit_file_is_still_an_error(svc, proj):
+    write(proj, "s.xml", b"<failsafe-summary/>")
+    with pytest.raises(ValueError, match="unexpected root"):
+        svc.import_report(proj, "s.xml")
