@@ -30,15 +30,16 @@ After an **update**, restart the process that runs plugins. For Desktop that's t
 
 ## Quickstart (5 minutes)
 
-1. In your project folder, add a `syw.toml`:
-   ```toml
-   criteria_file = "criteria.md"
-   tracked = ["src/**/*.py", "tests/**/*.py"]     # changes here make results stale
-   ```
-   and a `criteria.md` with one requirement per line:
+1. Use the requirements you already have: the ticket, bug report or spec, committed as Markdown on the branch. Give each requirement an ID with a digit (ticket checkboxes work):
    ```markdown
-   - [R1] The default tip is 15% of the bill
-   - [R2] The total can be split evenly between several people
+   # BUG-42: splitting a bill rounds each share down
+   - [ ] [BUG42-1] split(100, 3) returns 33.33 per person
+   - [ ] [BUG42-2] split(90, 3) still returns exactly 30.00
+   ```
+   Then add a `syw.toml` at the repo (or worktree) root pointing at it:
+   ```toml
+   criteria_file = "docs/bugs/BUG-42.md"
+   tracked = ["src/**/*.py", "tests/**/*.py"]     # changes here make results stale
    ```
 2. Ask your agent:
    > Use the show-your-work workflow on /abs/path/to/project: run the tests with `pytest --junitxml=report.xml`, import the report, link each test to the requirement it really checks (leave doubtful ones unlinked and say why), then show me the board.
@@ -46,6 +47,7 @@ After an **update**, restart the process that runs plugins. For Desktop that's t
    Maven, Gradle, Jest, Vitest, Go and .NET work too, see [test runners](docs/USAGE.md#4-get-junit-xml-from-your-test-runner). A folder of reports (e.g. `target/surefire-reports`) imports as one run.
 3. Open **Show Your Work** in the Desktop sidebar (or `/syw`, or `hermes syw board`). Inspect failures and **Accept** or **Reject** each requirement.
 4. Change a tracked file and results and sign-offs flip to *stale*. Rerun, re-import, re-review.
+   For a defect, have the agent show you the reproducing test **failing** before it fixes anything: see the [defect workflow](docs/USAGE.md#defect-fix).
 5. `/syw export` (or `hermes syw export`, or the Desktop button) writes a Markdown review report.
 
 Or try the sample in [`examples/tip-calculator`](examples/tip-calculator): a deliberate bug, a misspellable link, and an untested requirement. It's walked through in the [guide](docs/USAGE.md#16-walkthrough-the-tip-calculator-sample).
@@ -69,6 +71,7 @@ Or try the sample in [`examples/tip-calculator`](examples/tip-calculator): a del
 
 - A link is a coverage claim, not proof the test is adequate. That's what your review is for.
 - "Human-only" sign-off means the agent's **tools** can't review. `hermes syw accept` is an ordinary terminal command, so an agent with a terminal tool could run it; the review would be recorded as `human:cli`. Treat sign-off as a strong convention, not a lock.
+- One board per folder, not per branch: use a git worktree per feature or fix.
 - Reviews are local records, not signatures: anyone who can write to the profile's files could edit the database.
 - Freshness compares file contents. The "report is older than the code" warning compares file modification times, which copying or touching files can fool.
 

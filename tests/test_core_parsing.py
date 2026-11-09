@@ -151,3 +151,46 @@ def test_fingerprint_skips_symlinks_out_of_project(tmp_path):
     outside.write_text("secret")
     (tmp_path / "src" / "link.py").symlink_to(outside)
     assert fingerprint(proj).file_count == 1
+
+
+TICKET = """# Bug 42: split rounds down
+Steps: see [the ticket](https://example.com/42).
+- [ ] write a regression test
+- [x] reproduced locally
+- [Refunds](https://example.com) link bullet
+- [Note] remember to tell Jan
+- [BUG42-1] split(100, 3) returns 33.33 per person
+1. [BUG42-2] numbered items count
+2) [BUG42-3] so do parenthesised numbers
+- [ ] [AC1] unchecked task-list criterion
+- [X] [AC2] checked task-list criterion
++ [R9] plus bullets too
+"""
+
+
+def test_existing_ticket_only_yields_real_requirements():
+    found = [(c.id, c.text) for c in parse_criteria(TICKET)]
+    assert found == [
+        ("BUG42-1", "split(100, 3) returns 33.33 per person"),
+        ("BUG42-2", "numbered items count"),
+        ("BUG42-3", "so do parenthesised numbers"),
+        ("AC1", "unchecked task-list criterion"),
+        ("AC2", "checked task-list criterion"),
+        ("R9", "plus bullets too"),
+    ]
+
+
+def test_ticking_a_checkbox_does_not_change_the_requirement():
+    a = parse_criteria("- [ ] [AC1] Refunds above the total are rejected")[0]
+    b = parse_criteria("- [x] [AC1] Refunds above the total are rejected")[0]
+    assert a.digest == b.digest
+
+
+def test_ids_without_a_digit_are_ignored():
+    with pytest.raises(ValueError, match="need a digit"):
+        parse_criteria("- [Note] not a requirement\n- [x] done")
+
+
+def test_html_comments_are_not_part_of_requirements():
+    found = parse_criteria("- [B1] split works <!-- the reported case -->\n<!--\n- [B2] commented out\n-->\n")
+    assert [(f.id, f.text) for f in found] == [("B1", "split works")]

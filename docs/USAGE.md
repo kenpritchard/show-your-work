@@ -1,8 +1,8 @@
 # Show Your Work: usage guide
 
-This guide covers everything you need to use the plugin day to day: installing it, setting up a project, running the agent workflow, reading the board, signing off, and fixing the problems people actually hit. The [README](../README.md) is the short version.
+This guide covers everything you need to use the plugin day to day: installing it, pointing it at the requirements you already have (a ticket, a bug report, a spec), running the agent workflow, reading the board, signing off, and fixing the problems people actually hit. The [README](../README.md) is the short version.
 
-Applies to **v0.1.2** on Hermes Agent **v0.23.0 or later**.
+Applies to **v0.1.3** on Hermes Agent **v0.23.0 or later**.
 
 ## Contents
 
@@ -129,12 +129,50 @@ Your boards, links, runs and reviews stay in the profile's plugin database ([§1
 
 ## 3. Set up a project
 
-A project is any folder with a `syw.toml` in it. Two files go there.
+A project is a folder with a `syw.toml` in it, usually the root of your repo or worktree. The `syw.toml` says two things: **where the requirements are**, and **which files count as "the code"**.
+
+### Where the criteria come from
+
+You shouldn't have to invent requirements for the plugin. Real work already has them, in the ticket, the bug report or the spec. **Point `criteria_file` at that document.** The plugin reads only the requirement lines and ignores everything else, so the document can stay a normal ticket or spec.
+
+| You're working on | Point `criteria_file` at | Requirements look like |
+|---|---|---|
+| **A feature** | The ticket's acceptance criteria, or the feature spec, committed on the branch, e.g. `docs/features/refunds.md` | `- [AC1] A refund above the order total is rejected with 422` |
+| **A defect** | The bug report, committed with the fix, e.g. `docs/bugs/BUG-42.md` | `- [BUG42-1] split(100, 3) returns 33.33 per person` |
+| **A whole project** | The PRD or requirements doc, e.g. `PRD.md` | `- [REF3] Concurrent refunds with the same key create exactly one refund` |
+
+The usual change to an existing document is adding an ID to each requirement bullet. Ticket checklists (`- [ ] ...`) and numbered lists already work, so often that's all you need: `- [ ] [AC1] ...` or `1. [AC1] ...`.
+
+**The criteria must be a file inside the project.** The plugin can't read an issue tracker or a URL. If the requirements live in GitHub Issues, Jira or Linear, paste them into a Markdown file on the branch. That's worth doing anyway: the criteria get reviewed in the same PR as the code they describe, and the board and the code always agree on which version of the requirements was tested.
+
+**Who writes the criteria matters.** If the agent drafts the requirements and then tests against them, it's writing its own exam. Letting the agent turn a ticket into ID'd bullets is fine, but **read and approve the wording before any linking starts**. Rewording a requirement later makes its review stale, so the board will show if it changes after you've signed off.
+
+### Defects: write the requirements so the bug can't come back
+
+A good defect criteria file has three kinds of line:
+
+```markdown
+# BUG-42: splitting a bill rounds each share down
+
+Reported by Jan: splitting $100 three ways shows $33.00 each.
+
+## Fixed when
+
+- [BUG42-1] split(100, 3) returns 33.33 per person          <!-- the exact reported case -->
+- [BUG42-2] Shares are rounded to the nearest cent, not down  <!-- the rule behind it -->
+- [BUG42-3] split(90, 3) still returns exactly 30.00          <!-- nearby behaviour that must not break -->
+```
+
+1. **The reported case**, written as the expected behaviour. Its test should fail before the fix: that's your proof the test actually reproduces the bug.
+2. **The rule behind it**, so the fix isn't a special case for one input.
+3. **What must not regress.** Link the existing tests that cover neighbouring behaviour.
+
+The board then tells the whole story: BUG42-1 imported as `fail` before the fix and `pass` after, on `current` code, signed off by you. See the [defect walkthrough](#5-the-workflow-step-by-step).
 
 ### `syw.toml`
 
 ```toml
-criteria_file = "criteria.md"
+criteria_file = "docs/bugs/BUG-42.md"
 tracked = ["src/**/*.py", "tests/**/*.py"]
 ```
 
@@ -162,31 +200,48 @@ tracked = ["backend/src/main/**/*.java", "backend/src/test/**/*.java", "backend/
 tracked = ["src/**/*.ts", "test/**/*.ts", "package.json"]
 ```
 
-### The criteria file
+Usually you leave the criteria file itself **out** of `tracked`. Changes to it are already handled: rewording a requirement makes that requirement's review stale, without marking every test result stale.
 
-Any Markdown file works. A **requirement** is a bullet whose text starts with a bracketed ID:
+### The requirement line format
+
+A requirement is a list item whose text starts with a bracketed **ID containing a digit**:
 
 ```markdown
-# Checkout: acceptance criteria
-
-The refund rules come from PRD §6.4. Prose like this paragraph is ignored.
-
 - [R1] The default tip is 15% of the bill
-- [R2] The total can be split evenly between several people
 * [REF3] Concurrent refunds with the same key create exactly one refund
++ [AUTH-2] Tokens from the wrong issuer get 401
+1. [BUG42-1] split(100, 3) returns 33.33 per person
+- [ ] [AC1] A refund above the order total is rejected
+- [x] [AC2] Refund history shows the operator who issued it
 ```
 
-- IDs start with a letter, followed by up to 31 letters, digits, `_`, `.` or `-`. So `R1`, `REF3`, `AUTH-2` and `q1.a` are all fine.
-- Bullets can use `-` or `*`, and indentation is allowed. Everything that isn't a requirement line is ignored, so the criteria can live inside a normal spec.
+- Bullets can be `-`, `*`, `+`, `1.` or `1)`, indented or not. A task-list checkbox before the ID is allowed, and ticking it doesn't change the requirement.
+- IDs start with a letter, then up to 31 letters, digits, `_`, `.` or `-`, and **must contain at least one digit**. That rule is what lets the plugin read a real ticket: `- [x] reproduced locally`, `- [Note] ask Jan` and `- [Docs](https://...)` are skipped, not mistaken for requirements.
+- Everything that isn't a requirement line is ignored: headings, prose, links, code blocks, other bullets.
 - Duplicate IDs are an error, and so is a file with no requirements.
 - **Rewording a requirement makes its review stale.** The check ignores whitespace, so reflowing a line doesn't count as a change. Changing the words does.
 - **Renaming or deleting an ID orphans its links.** The board reports them as orphan links. Keep IDs stable and edit the text instead.
 
-Write requirements so a test can check them: one behaviour per line, close to the wording of the original spec. Requirements no test can check, such as "has CI" or "has ADRs", are allowed. They'll just stay untested, and that's an honest answer.
+Write requirements so a test can check them: one behaviour per line, close to the wording of the original. Requirements no test can check, such as "has CI" or "has ADRs", are allowed. They'll stay untested, and that's an honest answer.
+
+### Several features or fixes at once: one worktree each
+
+A board belongs to a **folder path**, and a folder has one `syw.toml`. So for parallel work, give each piece of work its own **git worktree**:
+
+```bash
+git worktree add ../app-bug-42 -b fix/bug-42
+git worktree add ../app-refunds -b feature/refunds
+```
+
+Each worktree is a different path, so each gets its own board, its own criteria file and its own runs, and none of them see the others.
+
+> **Don't switch branches in one checkout and expect separate boards.** The board is keyed by the folder path, not the branch. Check out `feature/refunds`, then `fix/bug-42`, in the same folder, and their links, runs and reviews mix on one board. Switching branches also changes tracked files, so everything goes stale. Use one worktree per branch.
+
+When the work is merged and the worktree removed, its board stays in the database under that path ([§13](#13-where-data-lives)). Export the review report first if you want to keep a record ([§9](#9-the-review-report-export)).
 
 ### Keeping the plugin's files out of git
 
-You may not want `syw.toml`, the criteria file and the exported report committed, for example when testing on someone else's repo. Exclude them locally without touching `.gitignore`:
+Normally `syw.toml` and the criteria file should be **committed** with the work: they're part of what the PR delivers. Sometimes you don't want that, for example when evaluating someone else's repo. Exclude them locally without touching `.gitignore`:
 
 ```bash
 printf 'syw.toml\ncriteria.md\nshow-your-work-review.md\n' >> "$(git rev-parse --git-path info/exclude)"
@@ -228,9 +283,11 @@ Limits per import: 5 MB per file; for a folder, 500 files and 50 MB in total. Fa
 
 ## 5. The workflow, step by step
 
-You normally drive this by asking the agent. The bundled skill (`show-your-work:workflow`) teaches the agent the steps, and you can ask it to load the skill explicitly.
+You normally drive this by asking the agent. The bundled skill (`show-your-work:workflow`) teaches the agent the steps, and you can ask it to load the skill explicitly. The general flow is the same for any kind of work; the defect version below adds one step that matters.
 
-**Step 0: you write the criteria and `syw.toml`** (or ask the agent to draft them from a spec, then review the draft yourself).
+### General flow
+
+**Step 0: requirements.** Point `syw.toml` at the ticket, bug report or spec ([§3](#where-the-criteria-come-from)). If the agent drafts the ID'd bullets, approve them before going on.
 
 **Step 1: check the board.**
 > Show me the Show Your Work board for /path/to/project.
@@ -247,15 +304,34 @@ Linking after importing is fine. The board recomputes from the latest run, so ne
 
 **Step 4: read the board together.** The agent should report passing, failing, untested and stale requirements, plus any links it doubts. It should never say anything is "accepted".
 
-**Step 5: fix, rerun, re-import.** After a code fix the old run turns **stale**. Rerun the tests and import again to get **current** results.
+**Step 5: fix, rerun, re-import.** After a code change the old run turns **stale**. Rerun the tests and import again to get **current** results.
 
 **Step 6: you review.** Open the board (Desktop, `/syw`, or `hermes syw board`). For each requirement, look at the linked tests and outcome and decide: **Accept** or **Reject**, with a note if useful.
 
-**Step 7: export** the review report if you want a record ([§9](#9-the-review-report-export)).
+**Step 7: export** the review report and attach it to the PR ([§9](#9-the-review-report-export)).
 
-A prompt that does steps 1–4 in one go:
+### Defect fix
 
-> Use the show-your-work workflow on /path/to/project: run the tests with `pytest --junitxml=report.xml`, import the report, link each test to the requirement it really checks (leave doubtful ones unlinked and say why), then show me the board and list what's untested.
+The difference from a feature: **prove the test reproduces the bug before fixing it.** A regression test that never failed proves nothing.
+
+1. **Worktree and requirements.** Create a worktree for the fix, commit the bug report as `docs/bugs/BUG-42.md` with ID'd "fixed when" lines ([§3](#defects-write-the-requirements-so-the-bug-cant-come-back)), and add `syw.toml` pointing at it.
+2. **Write the reproducing test first**, with no fix yet. Run the tests, import, and link. The board must show the reported-case requirement as **`fail`**. That imported failing run stays in the history as evidence.
+   - If it passes, the test doesn't reproduce the bug. Fix the test, not the code.
+3. **Link the regression requirement** to the existing tests around the change. They should already pass.
+4. **Fix the code.** The board turns `stale`. Rerun, import: the reported case is now **`pass`, `current`**, and the neighbours still pass.
+5. **Review and sign off,** then export. The run history shows a failing run followed by a passing one on the fixed code, which is the defect's story in one table.
+
+A prompt for steps 2–4:
+
+> We're fixing the defect in docs/bugs/BUG-42.md, using Show Your Work on /path/to/worktree. First write a test for BUG42-1 that reproduces the bug, run the tests with JUnit output, import, link it, and show me the board. It must fail before you touch the code. Stop and show me. After I confirm, fix the code, rerun, import, link the existing tests that cover BUG42-3, and show me the board again.
+
+The "stop and show me" is deliberate: you see the failing run with your own eyes before the fix exists.
+
+### A feature from a ticket
+
+> Use the show-your-work workflow on /path/to/worktree. The criteria are in docs/features/refunds.md. Run the tests with `./mvnw test`, import `backend/target/surefire-reports`, link each test to the requirement it really checks (leave doubtful ones unlinked and say why), then show me the board and list what's still untested.
+
+Untested requirements at this point are the remaining work, not a failure of the plugin.
 
 ## 6. Reading the board
 
@@ -429,6 +505,8 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 - **A link is a claim, not proof.** The plugin knows a test is linked and what it returned. It can't know whether the test checks the requirement well. That's what your review is for.
 - **Freshness uses file contents; the old-report check uses file times.** Results go stale by comparing the bytes of tracked files, which is reliable. The "report older than the code" warning compares file modification times, which `cp -p`, `touch`, an unzip or a git checkout can shift either way.
 - **Any tracked change stales everything.** Freshness is per project, not per requirement. Tune `tracked` to keep the noise down.
+- **One board per folder, not per branch.** Use worktrees for parallel work.
+- **Criteria must be a file in the project.** Issue trackers and URLs aren't read; paste the requirements into a Markdown file.
 - **Only the latest run counts.** A partial report hides the results of earlier runs (they show `not run`).
 - **Test IDs aren't checked when linking.** A typo shows `not run` forever. Compare with `syw_run_detail`.
 - **The agent can't remove its own links.** There's no unlink tool yet.
@@ -443,7 +521,9 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 | Symptom | Cause and fix |
 |---|---|
 | `no syw.toml in <path> or any parent folder` | You're not inside a project, or passed the wrong path. Create `syw.toml` or pass the project folder. |
-| `criteria file not found` / `no requirements found` | Check `criteria_file` in `syw.toml`. Requirement lines must look like `- [R1] text`. |
+| `criteria file not found` / `no requirements found` | Check `criteria_file` in `syw.toml`. Requirement lines must look like `- [R1] text`, and the ID needs a digit: `[Note]` is ignored, `[N1]` counts. |
+| Some ticket lines are missing from the board | They have no ID, or the ID has no digit. Add one: `- [ ] [AC3] ...`. |
+| Results from another branch on the board, or everything stale after `git checkout` | The board is keyed by folder, not branch. Use one worktree per branch ([§3](#several-features-or-fixes-at-once-one-worktree-each)). |
 | `duplicate requirement id R3` | Two lines use the same ID. Rename one. |
 | `... must stay inside the project` | A path in `syw.toml` or the report path uses `..` or is absolute. |
 | `report not found: some/folder` even though the folder exists | Your running plugin is **v0.1.0**, which only imports single files. Update, then restart the process that runs plugins ([§2 Update](#update)). |
@@ -461,7 +541,7 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 
 ## 16. Walkthrough: the tip-calculator sample
 
-The repo ships a tiny project with a deliberate bug (`split` uses integer division) and one requirement with no test. The output below is real, from v0.1.1.
+The repo ships a tiny project with a deliberate bug (`split` uses integer division) and one requirement with no test. Read R2 as a defect report: "splitting a bill gives wrong shares". The output below is real, from v0.1.1.
 
 ```bash
 cp -r examples/tip-calculator /tmp/tip && cd /tmp/tip
