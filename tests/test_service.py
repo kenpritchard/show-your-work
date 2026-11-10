@@ -246,3 +246,11 @@ def test_runs_flag_older_reports(svc, proj):
     flags = [r["older_report"] for r in svc.runs(proj)]
     assert flags == [False, True]  # newest first
     assert svc.board(proj)["latest_run"]["older_report"] is False
+
+
+def test_runs_carry_outcome_counts(svc, proj):
+    svc.import_report(proj, write(proj, "f.xml", FAIL_B))
+    svc.import_report(proj, write(proj, "p.xml", PASS_ALL))
+    newest, oldest = svc.runs(proj)
+    assert newest["counts"] == {"pass": 2}
+    assert oldest["counts"] == {"pass": 1, "fail": 1}

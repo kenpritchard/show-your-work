@@ -272,12 +272,21 @@ class Service:
         d["older_report"] = d["code_digest"].startswith(OLDER_REPORT)
         return d
 
+    def _counts(self, run_id: str) -> dict:
+        return {o: n for o, n in self.conn.execute(
+            "SELECT outcome, COUNT(*) FROM results WHERE run_id=? GROUP BY outcome", (run_id,))}
+
     def runs(self, root, limit: int = 50) -> list[dict]:
         project = self._project(root)
-        return [self._run_dict(r) for r in self.conn.execute(
+        out = []
+        for r in self.conn.execute(
             "SELECT * FROM runs WHERE project=? ORDER BY imported_at DESC, rowid DESC LIMIT ?",
             (self._key(project), limit),
-        )]
+        ):
+            d = self._run_dict(r)
+            d["counts"] = self._counts(d["run_id"])
+            out.append(d)
+        return out
 
     def evidence(self, root, test_id: str) -> dict:
         """Source + diff for one test id. Read-only; runs git in the project folder."""

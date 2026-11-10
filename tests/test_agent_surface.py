@@ -148,5 +148,6 @@ def test_export_flags_older_run_and_counts_passing(pkg):
          "latest_run": None, "summary": {"requirements": 1, "passing": 1, "untested": 0, "failing": 0,
                                          "stale": 0, "accepted": 0}, "requirements": []},
         [{"run_id": "r1", "imported_at": "t", "report_path": "x", "provenance": "agent-imported",
-          "tests": 3, "older_report": True}])
+          "tests": 3, "older_report": True, "counts": {"pass": 2, "fail": 1}}])
     assert "1 passing" in md and "older than the code" in md
+    assert "| 3 | 2 | 1 | 0 | 0 |" in md

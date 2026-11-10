@@ -43,11 +43,16 @@ def render_markdown(board: dict, runs: list[dict]) -> str:
                        + (f": {_cell(d['note'])}" if d["note"] else "")
                        + (" *(stale: requirement wording or code changed since)*" if r["review"] == "stale" else ""))
     if runs:
-        out += ["", "## Run history", "", "| Run | Imported | Report | Provenance | Tests | Note |",
-                "|---|---|---|---|---|---|"]
-        out += [f"| `{x['run_id']}` | {x['imported_at']} | `{x['report_path']}` | {x['provenance']} | {x['tests']} | "
+        out += ["", "## Run history", "", "Newest first.", "",
+                "| Run | Imported | Report | Provenance | Tests | Passed | Failed | Errors | Skipped | Note |",
+                "|---|---|---|---|---|---|---|---|---|---|"]
+        for x in runs:
+            c = x.get("counts") or {}
+            out.append(
+                f"| `{x['run_id']}` | {x['imported_at']} | `{x['report_path']}` | {x['provenance']} | {x['tests']} | "
+                f"{c.get('pass', 0)} | {c.get('fail', 0)} | {c.get('error', 0)} | {c.get('skipped', 0)} | "
                 + ("⚠️ report older than the code at import; freshness unknown" if x.get("older_report") else "")
-                + " |" for x in runs]
+                + " |")
     out += ["", "---",
             "_A link between a test and a requirement is a coverage claim, not proof the test is adequate. "
             "Results are imported from reports; this plugin did not run the tests. Reviews are local records, "
