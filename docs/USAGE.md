@@ -113,9 +113,18 @@ hermes -p <profile> plugins list          # check the version column
 |---|---|
 | `hermes` in a terminal | Just start a new session |
 | Telegram, Discord or another gateway | `hermes gateway restart` |
-| Hermes Desktop | The **dashboard backend** Desktop connects to. It keeps a long-lived *plugin host* process per profile, and that process survives gateway restarts and new Desktop sessions. Restart the dashboard service; in the official Docker image that's `/command/s6-svc -r /run/service/dashboard`. |
+| Hermes Desktop or the Webapp | The **dashboard backend** they connect to. It keeps a long-lived *plugin host* process per profile, and that process survives gateway restarts and new Desktop sessions. Restart the dashboard service; in the official Docker image that's `/command/s6-svc -r /run/service/dashboard`. |
 
 If an agent says "the tools are serving an old version" even though `plugins list` shows the new one, it's this. See [§15](#15-troubleshooting).
+
+**The board page updates separately from the backend.** The plugin has two halves, and an update has to reach both:
+
+| Half | Lives on | Updated by |
+|---|---|---|
+| Agent half (tools, `/syw`, CLI, the page's API) | The machine running Hermes for that profile | `hermes plugins update`, or Desktop's Update. Then restart the backend (above). |
+| Desktop half (the board page, `plugin.js`) | **Native Desktop:** the computer you run Desktop on, in its `desktop-plugins/show-your-work/` folder, shared by every profile. **Webapp:** the server's `desktop-plugins/` folder. | Desktop's **Install from Git / Update** with **Desktop** ticked, then ⌘K / Ctrl+K → **Reload desktop plugins**. |
+
+When Desktop and Hermes run on the same machine, the two move together. When Desktop connects to a **remote** backend (Docker, SSH, another computer), `hermes plugins update` on the server updates only the agent half: the page in Desktop stays on the old version until you update it from Desktop. Signs of a mismatch: the page is missing something the docs describe, or a panel shows an API error.
 
 ### Remove
 
@@ -570,6 +579,8 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 | Show Your Work is missing from Capabilities → Plugins | The **Agent** column lists plugins for the profile picked in that column's header, which may not be the profile you installed into. Switch it. |
 | Desktop page: "Show Your Work" isn't in the sidebar | Install with **Install from Git** and tick **Desktop** ([§2](#install-from-hermes-desktop)), then make sure it's enabled under Capabilities → Plugins. |
 | Desktop page shows API errors | The Agent half isn't installed or enabled on that profile, or the backend hasn't been restarted since installing. |
+| `404 Plugin not found` on the page | The page is asking a profile that doesn't have the plugin enabled, or the backend hasn't been restarted since it was installed there. Check which profile Desktop has selected, then restart the backend. |
+| Page looks like an older version (missing panels the docs describe) | Only the agent half was updated. Update the plugin from Desktop with **Desktop** ticked, then **Reload desktop plugins** ([Update](#update)). |
 | Windows: `WinError 32` / `WinError 5` while installing | Hermes installer bug. Use the manual install ([§2](#native-windows-installer-workaround)). |
 
 ## 16. Walkthrough: the tip-calculator sample
