@@ -2,7 +2,7 @@
 
 This guide covers everything you need to use the plugin day to day: installing it, pointing it at the requirements you already have (a ticket, a bug report, a spec), running the agent workflow, reading the board, signing off, and fixing the problems people actually hit. The [README](../README.md) is the short version.
 
-Applies to **v0.1.3** on Hermes Agent **v0.23.0 or later**.
+Applies to **v0.2.0** on Hermes Agent **v0.23.0 or later**.
 
 ## Contents
 
@@ -174,12 +174,14 @@ The board then tells the whole story: BUG42-1 imported as `fail` before the fix 
 ```toml
 criteria_file = "docs/bugs/BUG-42.md"
 tracked = ["src/**/*.py", "tests/**/*.py"]
+base = "origin/main"        # what the review diff compares against
 ```
 
 | Key | Default | Meaning |
 |---|---|---|
 | `criteria_file` | `"criteria.md"` | Path, relative to the project folder, of the Markdown file holding the requirements. |
 | `tracked` | `[]` | Glob patterns, relative to the project folder, for the files whose changes should make results and reviews **stale**. `**` matches any depth. |
+| `base` | the branch's upstream | The git ref the review compares against, e.g. `"origin/main"` or `"origin/4.2"`. Used only to show each test's diff and the change under review ([§7](#7-reviewing-and-signing-off)). The diff runs from the merge-base of `HEAD` and `base` to your working tree, so uncommitted changes are included. |
 
 Rules:
 
@@ -375,10 +377,10 @@ The `unknown`-for-old-reports rule exists because the plugin can't tell which ve
 
 ### The summary line
 
-`30 requirements · 9 untested · 0 failing · 0 stale · 0 accepted`
+`30 requirements · 21 passing · 9 untested · 0 failing · 0 stale · 0 accepted`
 
 - *failing* counts both `fail` and `error`.
-- The agent's `syw_board` result also includes a `passing` count. The CLI and export summary lines don't yet, so count the ✅ rows.
+- When the latest run came from a report older than the code, the board and Desktop header say so, and the export's run history marks that run.
 
 ### Board icons (CLI and `/syw`)
 
@@ -386,7 +388,7 @@ The `unknown`-for-old-reports rule exists because the plugin can't tell which ve
 ✅ R1  The default tip is 15% of the bill  [1 test(s) | pass | current | review: accepted]
 ```
 
-The icon shows the **outcome only**: ✅ pass, ❌ fail or error, ⏭ skipped, `·` not run. The bracket shows coverage, outcome, freshness and review. A ✅ next to `stale` or `unknown` means the tests passed on code that may not be today's code. Read the freshness, not just the icon.
+The icon combines outcome and freshness: ✅ pass on current code, ⚠️ pass but the code changed since, ❔ pass on code the plugin can't vouch for (old report), ❌ fail or error, ⏭ skipped, `·` not run. The bracket shows all four columns.
 
 ### Common patterns
 
@@ -399,6 +401,31 @@ The icon shows the **outcome only**: ✅ pass, ❌ fail or error, ⏭ skipped, `
 | Accepted requirements flipped to `review stale` | Code or wording changed after your sign-off. Re-review. |
 
 ## 7. Reviewing and signing off
+
+### What to look at
+
+For each requirement the question is: **do the linked tests really check what the requirement says?** The board can't answer that, but it puts the evidence in front of you:
+
+1. In Desktop, click a requirement. Its linked tests are listed with their outcome.
+2. **Click a test** to open it. You see:
+   - **where it is**: the file and line range, found from the test ID
+   - **its status against the base**: `new test`, `changed test`, or `unchanged`
+   - **what changed in this test**: just this method's diff, red and green
+   - **the test itself**: the method's source
+3. Open **The change under review** above the table to see the files changed and the diff of the non-test code the tests are meant to check.
+
+From a terminal the same evidence is available with `hermes syw show <test_id>` and `hermes syw change` ([§12](#12-reference-hermes-syw-cli)).
+
+Things worth questioning:
+- A **new** test linked to a reported-bug requirement should have failed in an earlier imported run. Check the run history in the export.
+- An **unchanged** test linked to a requirement about new behaviour probably doesn't test that behaviour.
+- A requirement that names a specific case (e.g. "including `ByteBufHolder` messages") should have a test whose source visibly does that.
+
+How the test is found: the class name in the test ID is mapped to a file in the project (`io.netty.FooTest` → `**/io/netty/FooTest.java`, `tests.test_tip` → `tests/test_tip.py`), then the method is located by name. Parameter suffixes like `(int)[3]` are ignored. This works for Java, Kotlin, Scala, Groovy, Python, Go and simple JavaScript `it("…")`/`test("…")` tests. When the method can't be located, the whole file and its diff are shown, with a note.
+
+Git needs to know about a file to diff it: a brand-new test file that isn't committed or `git add`ed shows its source but no diff.
+
+### Recording your decision
 
 Sign-off is yours, recorded from one of three human surfaces:
 
@@ -444,20 +471,21 @@ Or click **Export review report** in Desktop. It writes `show-your-work-review.m
 - a table of every requirement with its linked test IDs and all four statuses
 - **Failures**: every failing or erroring linked test, with its message
 - **Human reviews**: each requirement's latest decision, reviewer, time and note, marked if stale
-- **Run history**: the last 10 imports
+- **Run history**: the last 10 imports, with runs from old reports marked
 
 It's plain Markdown, so you can attach it to a PR, commit it, or paste it into a ticket.
 
 ## 10. Reference: agent tools
 
-All four take `project`: the **absolute** path of the folder containing `syw.toml`. Results are JSON with `"ok": true`, or `"ok": false` and an `error` message.
+All five take `project`: the **absolute** path of the folder containing `syw.toml`. Results are JSON with `"ok": true`, or `"ok": false` and an `error` message.
 
 | Tool | Arguments | Does |
 |---|---|---|
 | `syw_board` | `project` | Returns the full board: summary (including `passing`), every requirement with all four statuses and per-test outcomes, the latest run, the tracked-file hash, and orphan links. Read-only. |
-| `syw_link` | `project`, `requirement`, `test_ids` (1–50) | Links tests to one requirement and records them as linked by the agent. Adding a link that already exists does nothing. The requirement must exist; test IDs are **not** checked against reports. |
+| `syw_link` | `project`, `requirement`, `test_ids` (1–50) | Links tests to one requirement and records them as linked by the agent. Adding a link that already exists does nothing. The requirement must exist. Returns `warnings` for any test ID that isn't in the latest run (the link is still made). |
 | `syw_import` | `project`, `report_path` | Imports a JUnit XML file or a folder of them (path relative to the project) as one new run, recorded as `agent-imported`. Returns the run ID, test count, outcome counts and `warnings` (old report, skipped non-JUnit files). |
 | `syw_run_detail` | `project`, `run_id` (optional) | Returns every test result of a run (latest if omitted): ID, outcome, message. Use it to find exact test IDs. |
+| `syw_test_evidence` | `project`, `test_id` | Finds the test's file and method, and returns its source, its diff against `base`, and whether it's new, changed or unchanged. Read-only. Lets the agent check a test before linking it. |
 
 There is no tool to review, accept, reject, unlink or delete. Removing a wrong link currently needs a human (see [§14](#14-limits-and-honest-caveats)).
 
@@ -480,6 +508,8 @@ Every command finds the project by starting at the given folder (default: the cu
 
 ```
 hermes syw board  [project]                       print the board
+hermes syw show   <test_id> [--project P]          a test's location, status and diff (or source) vs base
+hermes syw change [project]                        files changed vs base, and the non-test diff
 hermes syw import <report> [--project P]          import a report or folder you ran yourself (human-imported)
 hermes syw accept <ID> [note ...] [--project P]   record your sign-off
 hermes syw reject <ID> [note ...] [--project P]   record a rejection
@@ -496,7 +526,7 @@ hermes syw export [project]                       write show-your-work-review.md
 - **Projects are keyed by their resolved absolute path.** Moving or renaming the project folder starts a fresh board. The old one stays in the database under the old path.
 - **Tables:** `links` (can be added; removal is internal only), `runs` and `results` (append-only), `reviews` (append-only).
 - **Files written into your project:** only `show-your-work-review.md`, and only when you export.
-- **Nothing leaves your machine.** The plugin makes no network calls, starts no processes, calls no models and sends no telemetry.
+- **Nothing leaves your machine.** The plugin makes no network calls, calls no models and sends no telemetry. The only process it starts is read-only `git` (`rev-parse`, `merge-base`, `diff`, `show`, `ls-files`) in the project folder, when someone opens a test's evidence or the change panel.
 
 ## 14. Limits and honest caveats
 
@@ -508,12 +538,12 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 - **One board per folder, not per branch.** Use worktrees for parallel work.
 - **Criteria must be a file in the project.** Issue trackers and URLs aren't read; paste the requirements into a Markdown file.
 - **Only the latest run counts.** A partial report hides the results of earlier runs (they show `not run`).
-- **Test IDs aren't checked when linking.** A typo shows `not run` forever. Compare with `syw_run_detail`.
+- **Test IDs are checked against the latest run only as a warning.** The link is still made, so a typo shows `not run` until a human removes it.
 - **The agent can't remove its own links.** There's no unlink tool yet.
 - **Coverage is all-or-nothing.** There's no "partial" link and no note on a link. Evidence that isn't a test (CI config, a design doc) can't be linked.
 - **"Human-only" sign-off is a strong convention, not a lock.** The agent tools can't review. But `hermes syw accept` is an ordinary terminal command, so an agent with a terminal tool *could* run it. The reviewer field would say `human:cli`. If that matters, read the review list in the export, or restrict the agent's terminal.
 - **Reviews are local records, not signatures.** Anyone who can write to the profile's files can edit the database.
-- **The CLI summary has no passing count, and the CLI shows ✅ next to `unknown` freshness.** Both are fixed in the next release; the agent board and Desktop page already show these correctly.
+- **Finding a test's source is a best guess** from its ID. Unusual layouts or generated tests may not be found; the evidence panel says so.
 - **Platforms:** tested on Linux (including WSL2 and Docker), macOS, and native Windows via the CLI. The Windows installer needs the workaround in [§2](#native-windows-installer-workaround).
 
 ## 15. Troubleshooting
@@ -531,7 +561,10 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 | `not valid JUnit XML: unexpected root <...>` | The file isn't a JUnit report. In a folder import, such files are skipped with a warning; if **all** files are like that you get `no JUnit reports in folder`. |
 | `report refused: unsafe XML` | The report uses XML entities. Regenerate it with a standard reporter. |
 | `report too large` | Over 5 MB per file (50 MB per folder). Split the run or trim captured output in the report. |
-| Linked requirement shows `not run` | The ID doesn't match. In the sample, linking `tests.test_tip::test_rounding` when the real ID is `test_rounds_to_cents` does exactly this. |
+| Linked requirement shows `not run` | The ID doesn't match. `syw_link` warns about this at link time. In the sample, linking `tests.test_tip::test_rounding` when the real ID is `test_rounds_to_cents` does exactly this. |
+| Test evidence: "could not find this test's source file" | The class name doesn't map to a file in the project (generated tests, unusual layout). Open the file yourself. |
+| Test evidence: no diff, "no base set" | Add `base = "origin/main"` (or your target branch) to `syw.toml`, or give the branch an upstream. |
+| Test evidence: "new file, not committed or staged" | Git can't diff a file it doesn't know. `git add` it (no commit needed). |
 | Everything is `unknown` after importing | The report is older than your code. Rerun the tests and import the new report. |
 | `/syw accept` says `unknown requirement` | It looked in the project of the session's working folder, which may not be the one you meant. Use `hermes syw accept <ID> --project <path>` or Desktop. |
 | Show Your Work is missing from Capabilities → Plugins | The **Agent** column lists plugins for the profile picked in that column's header, which may not be the profile you installed into. Switch it. |

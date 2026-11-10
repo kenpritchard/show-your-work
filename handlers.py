@@ -41,6 +41,8 @@ def tool(name: str):
                 return _ok(svc.link(root, args["requirement"], args["test_ids"], by="agent"))
             if name == "syw_import":
                 return _ok(svc.import_report(root, args["report_path"], provenance="agent-imported"))
+            if name == "syw_test_evidence":
+                return _ok(svc.evidence(root, args["test_id"]))
             if name == "syw_run_detail":
                 run_id = args.get("run_id")
                 if not run_id:
@@ -161,6 +163,11 @@ def cli_setup(parser):
     for name, help_ in (("board", "Print the board"), ("export", "Write the Markdown review report")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("project", nargs="?", default=".")
+    p = sub.add_parser("show", help="Show a linked test's source and its diff against the review base")
+    p.add_argument("test_id")
+    p.add_argument("--project", default=".")
+    p = sub.add_parser("change", help="Show the files changed and the non-test diff under review")
+    p.add_argument("project", nargs="?", default=".")
     p = sub.add_parser("import", help="Import a JUnit XML report you ran yourself")
     p.add_argument("report")
     p.add_argument("--project", default=".")
@@ -178,6 +185,28 @@ def cli_run(args):
             print(board_text(service().board(_find_project(Path(args.project).resolve()))))
         elif cmd == "export":
             print(f"Wrote {write_export(_find_project(Path(args.project).resolve()))}")
+        elif cmd == "show":
+            ev = service().evidence(_find_project(Path(args.project).resolve()), args.test_id)
+            where = ev["file"] or "source not found"
+            if ev["lines"]:
+                where += f":{ev['lines'][0]}-{ev['lines'][1]}"
+            print(f"{ev['test_id']}\n  {where}  [{ev['status'] or 'no diff'}]")
+            if ev["base"] and ev["base"].get("ok"):
+                print(f"  compared with {ev['base']['ref']} ({ev['base']['commit'][:10]})")
+            for n in ev["notes"]:
+                print(f"  note: {n}")
+            if ev["diff"]:
+                print("\n" + ev["diff"])
+            elif ev["source"]:
+                print("\n" + ev["source"])
+        elif cmd == "change":
+            ch = service().change(_find_project(Path(args.project).resolve()))
+            for n in ch["notes"]:
+                print(f"note: {n}")
+            for f in ch["files"]:
+                print(("  new (untracked)  " if f.get("untracked") else f"  +{f['added']} -{f['removed']}  ") + f["path"])
+            if ch["diff"]:
+                print("\n" + ch["diff"])
         elif cmd == "import":
             root = _find_project(Path(args.project).resolve())
             rel = Path(args.report).resolve().relative_to(root).as_posix() \

@@ -77,3 +77,27 @@ def test_cross_site_post_refused(api, proj):
     r = api.post(f"{P}/review", headers={"sec-fetch-site": "cross-site"},
                  json={"project": str(proj), "requirement": "R1", "decision": "accepted"})
     assert r.status_code == 403
+
+
+def test_evidence_and_change_endpoints(api, tmp_path):
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        pytest.skip("git not installed")
+    root = tmp_path / "g"
+    (root / "tests").mkdir(parents=True)
+    (root / "app.py").write_text("x = 1\n")
+    (root / "tests" / "test_a.py").write_text("def test_a():\n    assert 1\n")
+    (root / "criteria.md").write_text("- [R1] a\n")
+    (root / "syw.toml").write_text('criteria_file = "criteria.md"\ntracked = ["*.py"]\nbase = "main"\n')
+    run = lambda *a: subprocess.run(["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                                    check=True, capture_output=True)
+    run("init", "-q", "-b", "main"); run("add", "-A"); run("commit", "-qm", "b"); run("checkout", "-qb", "f")
+    (root / "app.py").write_text("x = 2\n")
+    (root / "tests" / "test_a.py").write_text("def test_a():\n    assert 1\n\n\ndef test_b():\n    assert 2\n")
+    ev = api.get(f"{P}/evidence", params={"project": str(root), "test_id": "tests.test_a::test_b"}).json()
+    assert ev["status"] == "new test" and ev["file"] == "tests/test_a.py" and "+def test_b" in ev["diff"]
+    ch = api.get(f"{P}/change", params={"project": str(root)}).json()
+    assert ch["production_files"] == ["app.py"] and "+x = 2" in ch["diff"]
+    bad = api.get(f"{P}/evidence", params={"project": str(root), "test_id": ""})
+    assert bad.status_code in (400, 422)

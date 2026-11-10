@@ -40,12 +40,13 @@ After an **update**, restart the process that runs plugins. For Desktop that's t
    ```toml
    criteria_file = "docs/bugs/BUG-42.md"
    tracked = ["src/**/*.py", "tests/**/*.py"]     # changes here make results stale
+   base = "origin/main"                            # the review shows diffs against this
    ```
 2. Ask your agent:
    > Use the show-your-work workflow on /abs/path/to/project: run the tests with `pytest --junitxml=report.xml`, import the report, link each test to the requirement it really checks (leave doubtful ones unlinked and say why), then show me the board.
 
    Maven, Gradle, Jest, Vitest, Go and .NET work too, see [test runners](docs/USAGE.md#4-get-junit-xml-from-your-test-runner). A folder of reports (e.g. `target/surefire-reports`) imports as one run.
-3. Open **Show Your Work** in the Desktop sidebar (or `/syw`, or `hermes syw board`). Inspect failures and **Accept** or **Reject** each requirement.
+3. Open **Show Your Work** in the Desktop sidebar (or `/syw`, or `hermes syw board`). Click a requirement, then a linked test, to see its code and what changed. Decide whether it really checks the requirement, then **Accept** or **Reject**.
 4. Change a tracked file and results and sign-offs flip to *stale*. Rerun, re-import, re-review.
    For a defect, have the agent show you the reproducing test **failing** before it fixes anything: see the [defect workflow](docs/USAGE.md#defect-fix).
 5. `/syw export` (or `hermes syw export`, or the Desktop button) writes a Markdown review report.
@@ -54,10 +55,10 @@ Or try the sample in [`examples/tip-calculator`](examples/tip-calculator): a del
 
 ## Surfaces
 
-- **Agent tools:** `syw_board`, `syw_link`, `syw_import`, `syw_run_detail`. There is **no tool that records a review**; the agent cannot accept its own work.
+- **Agent tools:** `syw_board`, `syw_link`, `syw_import`, `syw_run_detail`, `syw_test_evidence`. There is **no tool that records a review**; the agent cannot accept its own work.
 - **Slash command:** `/syw [board|accept R#|reject R#|export]`. Human-typed sign-off.
-- **CLI:** `hermes syw board|import|accept|reject|export`.
-- **Desktop page:** board, per-requirement detail with failure messages, Accept/Reject with a note, export.
+- **CLI:** `hermes syw board|show|change|import|accept|reject|export`.
+- **Desktop page:** board; click a requirement, then a test, to see **the test's code and its diff** against the base branch; the change under review; Accept/Reject with a note; export.
 - **Bundled skill:** `show-your-work:workflow` teaches the agent the flow.
 
 ## Disclosure
@@ -65,7 +66,7 @@ Or try the sample in [`examples/tip-calculator`](examples/tip-calculator): a del
 - **Reads** the `syw.toml`, the criteria file, the files matched by `tracked` (to hash them), and JUnit XML files or folders you or the agent name. All of these must be inside the project folder. Symlinks and paths outside the project are refused. Reports are capped at 5 MB per file (500 files / 50 MB per folder) and parsed with `defusedxml` (entities refused).
 - **Stores** links, imported results (test ids, outcomes, failure messages up to 2,000 chars), report hashes, file-set hashes and reviews in SQLite at `<HERMES_HOME>/plugin-data/show-your-work/data.db`. Runs and reviews are append-only.
 - **Writes** `show-your-work-review.md` into the project folder only when you export.
-- **Runs nothing.** No subprocesses, no network calls, no model calls, no telemetry.
+- **Runs no tests and makes no network or model calls.** The only process it starts is read-only `git` (`rev-parse`, `merge-base`, `diff`, `show`, `ls-files`) in the project folder, to show a test's source and diff when you open it for review. No telemetry.
 
 ## Limits
 
@@ -85,6 +86,7 @@ More in [Limits and honest caveats](docs/USAGE.md#14-limits-and-honest-caveats).
 
 ```bash
 python -m pytest                         # unit + API tests, needs Hermes's venv packages
+node tests/render_check.mjs              # renders the Desktop page with a stub React
 hermes plugins validate .
 ```
 

@@ -1,5 +1,5 @@
 name: show-your-work
-version: "0.1.3"
+version: "0.2.0"
 description: "Acceptance-criteria evidence board: which requirements your agent actually tested, what the imported results say, whether they are still current, and whether a human signed off."
 author: kenpritchard
 license: MIT
@@ -10,6 +10,7 @@ provides_tools:
   - syw_link
   - syw_import
   - syw_run_detail
+  - syw_test_evidence
 provides_hooks: []
 provides_middleware: []
 requires_env: []

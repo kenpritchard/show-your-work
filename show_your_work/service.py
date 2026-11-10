@@ -260,6 +260,7 @@ class Service:
             "criteria_file": project.criteria_file,
             "latest_run": None if run is None else self._run_dict(run),
             "code": {"digest": fp.digest, "tracked_files": fp.file_count},
+            "base": project.base,
             "summary": summary,
             "requirements": reqs,
             "orphan_links": orphans,
@@ -277,6 +278,18 @@ class Service:
             "SELECT * FROM runs WHERE project=? ORDER BY imported_at DESC, rowid DESC LIMIT ?",
             (self._key(project), limit),
         )]
+
+    def evidence(self, root, test_id: str) -> dict:
+        """Source + diff for one test id. Read-only; runs git in the project folder."""
+        from .evidence import test_evidence
+        if not isinstance(test_id, str) or not test_id.strip() or len(test_id) > 500:
+            raise ValueError("test_id is required")
+        return test_evidence(self._project(root), test_id.strip())
+
+    def change(self, root) -> dict:
+        """The whole change under review: changed files and the diff of non-test files."""
+        from .evidence import change_evidence
+        return change_evidence(self._project(root))
 
     def run_detail(self, root, run_id: str) -> dict:
         project = self._project(root)

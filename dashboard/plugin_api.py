@@ -109,6 +109,26 @@ async def run(project: str, run_id: str):
     return _errors(lambda: _service().run_detail(Path(_str(project)), _str(run_id, 32)))
 
 
+@router.get("/evidence")
+async def evidence(project: str, test_id: str):
+    """Source of one linked test and the git diff it relates to (read-only git in the project)."""
+    ev = _own("show_your_work.evidence")
+    try:
+        return _errors(lambda: _service().evidence(Path(_str(project)), _str(test_id, 500)))
+    except ev.EvidenceError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.get("/change")
+async def change(project: str):
+    """Files changed versus the review base, and the diff of the non-test files."""
+    ev = _own("show_your_work.evidence")
+    try:
+        return _errors(lambda: _service().change(Path(_str(project))))
+    except ev.EvidenceError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
 @router.post("/review")
 async def review(request: Request):
     v = await _json(request, {"project", "requirement", "decision"}, {"note"})

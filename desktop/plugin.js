@@ -26,6 +26,12 @@ const BADGES = {
   review: {
     accepted: ['accepted', 'good'], rejected: ['rejected', 'bad'],
     stale: ['review stale', 'warn'], none: ['not reviewed', 'muted']
+  },
+  change: {
+    'new test': ['new test', 'good'], 'new test (new file)': ['new test', 'good'],
+    'changed test': ['changed test', 'warn'], unchanged: ['unchanged', 'muted'],
+    'unchanged test (other parts of the file changed)': ['unchanged', 'muted'],
+    'new file, not committed or staged': ['not in git yet', 'warn']
   }
 }
 
@@ -74,16 +80,111 @@ function ReviewControls({ ctx, project, req, onDone }) {
     err && h('span', { style: { color: TONE.bad, fontSize: 12 } }, err))
 }
 
+const mono = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, lineHeight: 1.45 }
+const codeBox = {
+  ...mono, margin: '6px 0 10px', padding: '8px 10px', borderRadius: 6, overflow: 'auto', maxHeight: 360,
+  background: 'var(--ui-control-background, rgba(127,127,127,0.08))', border: '1px solid var(--ui-stroke-secondary)',
+  whiteSpace: 'pre'
+}
+
+// Red/green rendering of a unified diff. Plain text only, never HTML.
+function Diff({ text }) {
+  const lines = (text || '').split('\n').filter(l => !/^(diff --git|index |--- |\+\+\+ )/.test(l))
+  return h('div', { style: codeBox }, lines.map((l, i) => {
+    const c = l[0]
+    const style = c === '+' ? { color: TONE.good, background: 'color-mix(in srgb, ' + TONE.good + ' 10%, transparent)' }
+      : c === '-' ? { color: TONE.bad, background: 'color-mix(in srgb, ' + TONE.bad + ' 10%, transparent)' }
+        : c === '@' ? { color: TONE.muted } : {}
+    return h('div', { key: i, style: { ...style, minHeight: '1.45em' } }, l || ' ')
+  }))
+}
+
+const label = { fontSize: 11, fontWeight: 600, color: 'var(--ui-text-secondary)', marginTop: 8 }
+
+// Source + diff for one linked test, fetched when you open it.
+function TestEvidence({ ctx, project, testId }) {
+  const [ev, setEv] = useState({ loading: true })
+  useEffect(() => {
+    ctx.rest(`/evidence?project=${encodeURIComponent(project)}&test_id=${encodeURIComponent(testId)}`)
+      .then(data => setEv({ data }))
+      .catch(e => setEv({ error: String((e && e.message) || e) }))
+  }, [project, testId])
+  if (ev.loading) return h('div', { style: { color: TONE.muted, padding: '4px 0' } }, 'Finding the test…')
+  if (ev.error) return h('div', { style: { color: TONE.bad, padding: '4px 0' } }, ev.error)
+  const d = ev.data
+  const where = d.file ? `${d.file}${d.lines ? `:${d.lines[0]}–${d.lines[1]}` : ''}` : 'source not found'
+  const base = d.base && d.base.ok ? `${d.base.ref} (${String(d.base.commit).slice(0, 10)})` : null
+  return h('div', { style: { padding: '2px 0 6px' } },
+    h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline', color: TONE.muted } },
+      h('span', { style: mono }, where),
+      d.status && h(Pill, { kind: 'change', value: d.status }),
+      base && h('span', null, `compared with ${base}`)),
+    d.notes && d.notes.length > 0 && h('div', { style: { color: TONE.warn, marginTop: 4 } }, d.notes.join(' · ')),
+    d.diff && h('div', null, h('div', { style: label }, d.diff_scope === 'method' ? 'What changed in this test' : 'What changed in this file'),
+      h(Diff, { text: d.diff })),
+    d.source && h('div', null, h('div', { style: label }, d.method_found ? 'The test' : 'The whole file (method not located)'),
+      h('div', { style: codeBox }, d.source)))
+}
+
+function LinkedTests({ ctx, project, req }) {
+  const [open, setOpen] = useState(null)
+  return h('table', { style: { borderCollapse: 'collapse', width: '100%' } },
+    h('tbody', null, req.tests.flatMap(t => {
+      const isOpen = open === t.test_id
+      const row = h('tr', { key: t.test_id, onClick: () => setOpen(isOpen ? null : t.test_id), style: { cursor: 'pointer' },
+        title: 'Show this test and its diff' },
+      h('td', { style: { padding: '3px 4px', width: 14, color: TONE.muted } }, isOpen ? '▾' : '▸'),
+      h('td', { style: { padding: '3px 8px', ...mono, textDecoration: 'underline dotted' } }, t.test_id),
+      h('td', { style: { padding: '3px 8px' } }, h(Pill, { kind: 'outcome', value: t.outcome })),
+      h('td', { style: { padding: '3px 8px', color: TONE.muted } }, t.message || ''))
+      return isOpen
+        ? [row, h('tr', { key: t.test_id + ':ev' }, h('td', null), h('td', { colSpan: 3, style: { padding: '0 8px' } },
+          h(TestEvidence, { ctx, project, testId: t.test_id })))]
+        : [row]
+    })))
+}
+
+// The change under review: file list + production diff, collapsed by default.
+function ChangePanel({ ctx, project }) {
+  const [open, setOpen] = useState(false)
+  const [st, setSt] = useState(null)
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    if (next && !st) {
+      setSt({ loading: true })
+      ctx.rest(`/change?project=${encodeURIComponent(project)}`)
+        .then(data => setSt({ data }))
+        .catch(e => setSt({ error: String((e && e.message) || e) }))
+    }
+  }
+  const d = st && st.data
+  return h('div', { style: { margin: '4px 0 14px', fontSize: 12 } },
+    h('div', { onClick: toggle, style: { cursor: 'pointer', fontWeight: 600, color: 'var(--ui-text-secondary)' } },
+      (open ? '▾ ' : '▸ ') + 'The change under review (code the tests are checking)'),
+    open && st && st.loading && h('div', { style: { color: TONE.muted } }, 'Loading diff…'),
+    open && st && st.error && h('div', { style: { color: TONE.bad } }, st.error),
+    open && d && h('div', { style: { paddingLeft: 14 } },
+      d.base && d.base.ok
+        ? h('div', { style: { color: TONE.muted, marginTop: 4 } }, `Compared with ${d.base.ref} (${String(d.base.commit).slice(0, 10)}), `,
+          `including uncommitted changes. ${d.files.length} file(s) changed.`)
+        : null,
+      d.notes && d.notes.length > 0 && h('div', { style: { color: TONE.warn, marginTop: 4 } }, d.notes.join(' · ')),
+      d.files.length > 0 && h('div', { style: { ...mono, marginTop: 6 } }, d.files.map(f => h('div', { key: f.path },
+        f.untracked ? `  new (untracked)  ${f.path}` : `+${f.added} -${f.removed}  ${f.path}`))),
+      d.diff ? h(Diff, { text: d.diff }) : (d.base && d.base.ok ? h('div', { style: { color: TONE.muted, marginTop: 6 } },
+        'No non-test files changed.') : null)))
+}
+
 function RequirementDetail({ ctx, project, req, onDone }) {
   const d = req.review_detail
   return h('div', { style: { padding: '8px 10px 14px 34px', fontSize: 12 } },
     req.tests.length === 0
       ? h('div', { style: { color: TONE.bad } }, 'No test is linked to this requirement. Nothing has checked it.')
-      : h('table', { style: { borderCollapse: 'collapse', width: '100%' } },
-        h('tbody', null, req.tests.map(t => h('tr', { key: t.test_id },
-          h('td', { style: { padding: '3px 8px', fontFamily: 'ui-monospace, monospace' } }, t.test_id),
-          h('td', { style: { padding: '3px 8px' } }, h(Pill, { kind: 'outcome', value: t.outcome })),
-          h('td', { style: { padding: '3px 8px', color: TONE.muted } }, t.message || ''))))),
+      : h('div', null,
+        h('div', { style: { color: TONE.muted, marginBottom: 4 } },
+          'Click a test to see its code and what changed. Ask: does it really check this requirement?'),
+        h(LinkedTests, { ctx, project, req })),
     d && h('div', { style: { marginTop: 8, color: TONE.muted } },
       `Last review: ${d.decision} by ${d.by} at ${d.at}${d.note ? ` ("${d.note}")` : ''}`,
       req.review === 'stale' ? '. The requirement wording or the tracked code changed since, so review it again.' : ''),
@@ -128,6 +229,7 @@ function Board({ ctx, project }) {
       run && run.older_report ? h('span', { style: { color: TONE.warn } },
         ' · report was older than the code when imported, so freshness is unknown') : null),
     h(Summary, { s: b.summary }),
+    h(ChangePanel, { key: project, ctx, project }),
     h('table', { style: { borderCollapse: 'collapse', width: '100%', fontSize: 13 } },
       h('thead', null, h('tr', null,
         ['', 'Requirement', 'Coverage', 'Outcome', 'Freshness', 'Review'].map((t, i) => h('th', { key: i, style: head }, t)))),
@@ -155,7 +257,7 @@ function Board({ ctx, project }) {
       msg && h('span', { style: { fontSize: 12, color: TONE.muted } }, msg)),
     h('div', { style: { marginTop: 18, fontSize: 11, color: TONE.muted, maxWidth: 720 } },
       'A linked test is a coverage claim, not proof it checks the requirement well. Results are imported from reports; ',
-      'this plugin runs nothing. Only you can accept or reject; the agent has no tool for it.'))
+      'this plugin runs no tests. Only you can accept or reject; the agent has no tool for it.'))
 }
 
 function makeApp(ctx) {

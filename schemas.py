@@ -61,6 +61,24 @@ TOOL_SCHEMAS = {
             "additionalProperties": False,
         },
     },
+    "syw_test_evidence": {
+        "name": "syw_test_evidence",
+        "description": (
+            "Locate one test from its JUnit id and return its source (just the method when it can be found) "
+            "and its git diff against the review base set in syw.toml (base = \"origin/main\"), with a status of "
+            "new test / changed test / unchanged. Read-only. Use it to check a link before making it: does "
+            "this test really check the requirement?"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project": _PROJECT,
+                "test_id": {"type": "string", "maxLength": 500, "description": "classname::name from the report."},
+            },
+            "required": ["project", "test_id"],
+            "additionalProperties": False,
+        },
+    },
     "syw_run_detail": {
         "name": "syw_run_detail",
         "description": "Per-test outcomes and failure messages for one imported run (or the latest).",

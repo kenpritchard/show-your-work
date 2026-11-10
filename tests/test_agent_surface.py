@@ -67,7 +67,7 @@ class FakeCtx:
 def test_registers_exactly_the_declared_surface(pkg):
     ctx = FakeCtx()
     pkg["init"].register(ctx)
-    assert set(ctx.tools) == {"syw_board", "syw_link", "syw_import", "syw_run_detail"}
+    assert set(ctx.tools) == {"syw_board", "syw_link", "syw_import", "syw_run_detail", "syw_test_evidence"}
     assert set(ctx.commands) == {"syw"} and set(ctx.cli) == {"syw"} and set(ctx.skills) == {"workflow"}
     manifest = (ROOT / "plugin.yaml").read_text()
     for name in ctx.tools:

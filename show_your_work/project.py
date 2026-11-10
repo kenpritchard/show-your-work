@@ -4,6 +4,7 @@ syw.toml:
 
     criteria_file = "criteria.md"
     tracked = ["src/**/*.py", "tests/**/*.py"]   # changes here make results stale
+    base = "origin/main"                         # optional: what the review diff compares against
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ class Project:
     criteria_file: str
     tracked: list[str]
     criteria: list[Criterion]
+    base: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,9 @@ def load_project(root: str | Path) -> Project:
         raise ProjectError(f"{CONFIG_NAME} is not valid TOML: {exc}") from None
     criteria_file = cfg.get("criteria_file", "criteria.md")
     tracked = cfg.get("tracked", [])
+    base = cfg.get("base", "")
+    if not isinstance(base, str):
+        raise ProjectError(f"{CONFIG_NAME}: base must be a string (a git ref such as \"origin/main\")")
     if not isinstance(criteria_file, str) or not isinstance(tracked, list) or not all(
         isinstance(t, str) for t in tracked
     ):
@@ -71,7 +76,7 @@ def load_project(root: str | Path) -> Project:
         criteria = parse_criteria(crit_path.read_text(encoding="utf-8"))
     except ValueError as exc:
         raise ProjectError(f"{criteria_file}: {exc}") from None
-    return Project(root, criteria_file, list(tracked), criteria)
+    return Project(root, criteria_file, list(tracked), criteria, base.strip())
 
 
 def tracked_files(project: Project) -> list[Path]:

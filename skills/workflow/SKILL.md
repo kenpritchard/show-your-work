@@ -13,6 +13,8 @@ Use this when a task has acceptance criteria and you are about to say the work i
    - `syw_link` does **not** check ids against any report: a typo shows `not run` forever, and you have no unlink tool. Get it right the first time.
    - Java ids carry signature suffixes: parameterized cases look like `name(ParamType)[1]`, `[2]`…, and injected JUnit extension parameters appear too, e.g. `name(CapturedOutput)`. Link each case you rely on.
    - One call links one requirement; independent calls can run in parallel.
+   - Read the `warnings` in the result: an id not in the latest run is almost always a typo.
+   - Before linking, `syw_test_evidence(project, test_id)` shows the test's source and whether it's new, changed or unchanged against the base. Link only if the source actually checks the requirement.
 3. **Run the tests yourself** with the normal terminal tool, writing JUnit XML, e.g. `pytest --junitxml=report.xml`; Maven Surefire writes `target/surefire-reports/TEST-*.xml` by itself. A runner exit code of 0 is not a pass. Some harnesses always exit 0.
 4. **Import the report:** `syw_import(project, report_path="report.xml")`, or a whole folder such as `target/surefire-reports` as one run. Read any `warnings` in the result, then read the board again. Use `syw_run_detail` to see failure messages. Only the latest run counts, so import complete runs.
    - If the tool behaves like an older version than the files on disk (e.g. a folder import says "report not found"), the plugin host is still running old code. Tell the human; don't work around it.
