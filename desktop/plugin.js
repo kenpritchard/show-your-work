@@ -151,7 +151,7 @@ function ChangePanel({ ctx, project }) {
   const toggle = () => {
     const next = !open
     setOpen(next)
-    if (next && !st) {
+    if (next) { // refetch on every open: the diff changes as the work does
       setSt({ loading: true })
       ctx.rest(`/change?project=${encodeURIComponent(project)}`)
         .then(data => setSt({ data }))
@@ -229,7 +229,7 @@ function Board({ ctx, project }) {
       run && run.older_report ? h('span', { style: { color: TONE.warn } },
         ' · report was older than the code when imported, so freshness is unknown') : null),
     h(Summary, { s: b.summary }),
-    h(ChangePanel, { key: project, ctx, project }),
+    h(ChangePanel, { key: project + ':' + (run ? run.run_id : ''), ctx, project }),
     h('table', { style: { borderCollapse: 'collapse', width: '100%', fontSize: 13 } },
       h('thead', null, h('tr', null,
         ['', 'Requirement', 'Coverage', 'Outcome', 'Freshness', 'Review'].map((t, i) => h('th', { key: i, style: head }, t)))),
