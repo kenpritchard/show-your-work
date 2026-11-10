@@ -20,8 +20,8 @@ def render_markdown(board: dict, runs: list[dict]) -> str:
                             f"`{run['run_id']}` at {run['imported_at']} from `{run['report_path']}` "
                             f"({run['provenance']}, report sha256 `{run['report_sha256'][:12]}`)"),
         "",
-        f"**{s['requirements']} requirements: {s['untested']} untested, {s['failing']} failing, "
-        f"{s['stale']} stale, {s['accepted']} accepted by a human.**",
+        f"**{s['requirements']} requirements: {s['passing']} passing, {s['untested']} untested, "
+        f"{s['failing']} failing, {s['stale']} stale, {s['accepted']} accepted by a human.**",
         "",
         "| Req | Requirement | Coverage | Outcome | Freshness | Review |",
         "|---|---|---|---|---|---|",
@@ -43,9 +43,11 @@ def render_markdown(board: dict, runs: list[dict]) -> str:
                        + (f": {_cell(d['note'])}" if d["note"] else "")
                        + (" *(stale: requirement wording or code changed since)*" if r["review"] == "stale" else ""))
     if runs:
-        out += ["", "## Run history", "", "| Run | Imported | Report | Provenance | Tests |", "|---|---|---|---|---|"]
-        out += [f"| `{x['run_id']}` | {x['imported_at']} | `{x['report_path']}` | {x['provenance']} | {x['tests']} |"
-                for x in runs]
+        out += ["", "## Run history", "", "| Run | Imported | Report | Provenance | Tests | Note |",
+                "|---|---|---|---|---|---|"]
+        out += [f"| `{x['run_id']}` | {x['imported_at']} | `{x['report_path']}` | {x['provenance']} | {x['tests']} | "
+                + ("⚠️ report older than the code at import; freshness unknown" if x.get("older_report") else "")
+                + " |" for x in runs]
     out += ["", "---",
             "_A link between a test and a requirement is a coverage claim, not proof the test is adequate. "
             "Results are imported from reports; this plugin did not run the tests. Reviews are local records, "

@@ -26,6 +26,7 @@ def pkg():
         "handlers": il.import_module("syw_plugin_under_test.handlers"),
         "schemas": il.import_module("syw_plugin_under_test.schemas"),
         "service": il.import_module("syw_plugin_under_test.show_your_work.service"),
+        "report": il.import_module("syw_plugin_under_test.show_your_work.report"),
     }
 
 
@@ -124,3 +125,28 @@ def test_export_writes_markdown(pkg, proj, monkeypatch):
     out = Path(h.slash("export").removeprefix("Wrote ").strip())
     md = out.read_text()
     assert "| R2 |" in md and "boom" in md and "not proof" in md
+
+
+def test_board_text_icons_and_passing_count(pkg):
+    h = pkg["handlers"]
+    def req(rid, outcome, fresh):
+        return {"id": rid, "text": "t", "coverage": "linked", "tests": [1], "outcome": outcome,
+                "freshness": fresh, "review": "none"}
+    board = {"project": "/p", "latest_run": None,
+             "summary": {"requirements": 4, "passing": 3, "untested": 0, "failing": 1, "stale": 1, "accepted": 0},
+             "requirements": [req("R1", "pass", "current"), req("R2", "pass", "stale"),
+                              req("R3", "pass", "unknown"), req("R4", "fail", "current")]}
+    text = h.board_text(board)
+    assert "3 passing" in text
+    lines = {l.split()[1]: l.split()[0] for l in text.splitlines() if l[:1] in "✅⚠❔❌"}
+    assert lines == {"R1": "✅", "R2": "⚠️", "R3": "❔", "R4": "❌"}
+
+
+def test_export_flags_older_run_and_counts_passing(pkg):
+    md = pkg["report"].render_markdown(
+        {"project": "/p", "criteria_file": "c.md", "code": {"tracked_files": 1, "digest": "a" * 64},
+         "latest_run": None, "summary": {"requirements": 1, "passing": 1, "untested": 0, "failing": 0,
+                                         "stale": 0, "accepted": 0}, "requirements": []},
+        [{"run_id": "r1", "imported_at": "t", "report_path": "x", "provenance": "agent-imported",
+          "tests": 3, "older_report": True}])
+    assert "1 passing" in md and "older than the code" in md

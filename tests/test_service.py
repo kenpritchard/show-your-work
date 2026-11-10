@@ -225,3 +225,24 @@ def test_single_non_junit_file_is_still_an_error(svc, proj):
     write(proj, "s.xml", b"<failsafe-summary/>")
     with pytest.raises(ValueError, match="unexpected root"):
         svc.import_report(proj, "s.xml")
+
+
+def test_link_warns_on_ids_not_in_latest_run(svc, proj):
+    out = svc.link(proj, "R1", ["t::test_a"], by="agent")
+    assert out["warnings"] and "no run imported" in out["warnings"][0]
+    svc.import_report(proj, write(proj, "r.xml", PASS_ALL))
+    assert svc.link(proj, "R1", ["t::test_a"], by="agent")["warnings"] == []
+    w = svc.link(proj, "R2", ["t::test_typo", "t::test_b"], by="agent")["warnings"]
+    assert len(w) == 1 and "t::test_typo" in w[0] and "test_b" not in w[0]
+
+
+def test_runs_flag_older_reports(svc, proj):
+    import os
+    write(proj, "old.xml", PASS_ALL)
+    old = (proj / "src" / "app.py").stat().st_mtime - 3600
+    os.utime(proj / "old.xml", (old, old))
+    svc.import_report(proj, "old.xml")
+    svc.import_report(proj, write(proj, "new.xml", PASS_ALL))
+    flags = [r["older_report"] for r in svc.runs(proj)]
+    assert flags == [False, True]  # newest first
+    assert svc.board(proj)["latest_run"]["older_report"] is False

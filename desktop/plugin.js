@@ -49,6 +49,7 @@ function Summary({ s }) {
     h('span', { style: { fontSize: 11, color: TONE.muted } }, label))
   return h('div', { style: { display: 'flex', gap: 24, margin: '12px 0 16px' } },
     item(s.requirements, 'requirements'),
+    item(s.passing, 'passing', 'good'),
     item(s.untested, 'untested', 'bad'),
     item(s.failing, 'failing', 'bad'),
     item(s.stale, 'stale', 'warn'),
@@ -123,7 +124,9 @@ function Board({ ctx, project }) {
   return h('div', null,
     h('div', { style: { fontSize: 12, color: TONE.muted } },
       run ? `Latest run ${run.run_id} · ${run.imported_at} · ${run.report_path} · ${run.provenance} · ${run.tests} tests`
-        : 'No test report imported yet.'),
+        : 'No test report imported yet.',
+      run && run.older_report ? h('span', { style: { color: TONE.warn } },
+        ' · report was older than the code when imported, so freshness is unknown') : null),
     h(Summary, { s: b.summary }),
     h('table', { style: { borderCollapse: 'collapse', width: '100%', fontSize: 13 } },
       h('thead', null, h('tr', null,

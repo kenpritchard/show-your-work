@@ -68,6 +68,20 @@ SLASH_HELP = """Show Your Work
 _ICON = {"pass": "✅", "fail": "❌", "error": "❌", "skipped": "⏭", "not run": "·"}
 
 
+def _icon(r: dict) -> str:
+    # A pass on code the plugin can't vouch for must not look like a plain green check.
+    if r["outcome"] == "pass" and r["freshness"] == "stale":
+        return "⚠️"
+    if r["outcome"] == "pass" and r["freshness"] == "unknown":
+        return "❔"
+    return _ICON.get(r["outcome"], "?")
+
+
+def summary_line(s: dict) -> str:
+    return (f"{s['requirements']} requirements · {s['passing']} passing · {s['untested']} untested · "
+            f"{s['failing']} failing · {s['stale']} stale · {s['accepted']} accepted")
+
+
 def _session_root() -> Path:
     try:
         from agent.runtime_cwd import resolve_agent_cwd
@@ -88,15 +102,18 @@ def board_text(board: dict) -> str:
     s = board["summary"]
     lines = [
         f"Show Your Work: {board['project']}",
-        f"{s['requirements']} requirements · {s['untested']} untested · {s['failing']} failing · "
-        f"{s['stale']} stale · {s['accepted']} accepted",
+        summary_line(s),
     ]
+    if board.get("latest_run") and board["latest_run"].get("older_report"):
+        lines.append("warning: the latest run's report was older than the code when imported; freshness is unknown")
     for r in board["requirements"]:
         cov = "untested" if r["coverage"] == "none" else f"{len(r['tests'])} test(s)"
         lines.append(
-            f"{_ICON.get(r['outcome'], '?')} {r['id']}  {r['text'][:60]}  [{cov} | {r['outcome']} | "
+            f"{_icon(r)} {r['id']}  {r['text'][:60]}  [{cov} | {r['outcome']} | "
             f"{r['freshness']} | review: {r['review']}]"
         )
+    lines.append("Icons: ✅ pass on current code · ⚠️ pass, code changed since · ❔ pass, unverified code · "
+                 "❌ fail/error · ⏭ skipped · · not run")
     return "\n".join(lines)
 
 

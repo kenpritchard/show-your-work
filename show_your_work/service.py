@@ -76,7 +76,21 @@ class Service:
                     "INSERT OR IGNORE INTO links VALUES (?,?,?,?,?)",
                     (self._key(project), requirement, t[:500], by, _now()),
                 )
-        return {"requirement": requirement, "linked": clean}
+        warnings = []
+        run = self._latest_run(self._key(project))
+        if run is None:
+            warnings.append("no run imported yet, so these test ids could not be checked; "
+                            "import a report and read syw_run_detail for the exact ids")
+        else:
+            known = {r[0] for r in self.conn.execute(
+                "SELECT test_id FROM results WHERE run_id=?", (run["run_id"],))}
+            missing = [t for t in clean if t not in known]
+            if missing:
+                warnings.append(f"{len(missing)} test id(s) are not in the latest run "
+                                f"({run['run_id']}) and will show 'not run': " + ", ".join(missing[:5])
+                                + (" ..." if len(missing) > 5 else "")
+                                + ". Check the spelling against syw_run_detail.")
+        return {"requirement": requirement, "linked": clean, "warnings": warnings}
 
     def unlink(self, root, requirement: str, test_ids: list[str]) -> dict:
         project = self._project(root)
@@ -244,16 +258,22 @@ class Service:
         return {
             "project": key,
             "criteria_file": project.criteria_file,
-            "latest_run": None if run is None else dict(run),
+            "latest_run": None if run is None else self._run_dict(run),
             "code": {"digest": fp.digest, "tracked_files": fp.file_count},
             "summary": summary,
             "requirements": reqs,
             "orphan_links": orphans,
         }
 
+    @staticmethod
+    def _run_dict(row) -> dict:
+        d = dict(row)
+        d["older_report"] = d["code_digest"].startswith(OLDER_REPORT)
+        return d
+
     def runs(self, root, limit: int = 50) -> list[dict]:
         project = self._project(root)
-        return [dict(r) for r in self.conn.execute(
+        return [self._run_dict(r) for r in self.conn.execute(
             "SELECT * FROM runs WHERE project=? ORDER BY imported_at DESC, rowid DESC LIMIT ?",
             (self._key(project), limit),
         )]
@@ -267,7 +287,7 @@ class Service:
             raise KeyError(f"no run {run_id!r} for this project")
         results = [dict(r) for r in self.conn.execute(
             "SELECT test_id, outcome, message FROM results WHERE run_id=? ORDER BY seq", (run_id,))]
-        return {"run": dict(run), "results": results}
+        return {"run": self._run_dict(run), "results": results}
 
 
 def default_service() -> Service:
