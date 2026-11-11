@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import shlex
+import tempfile
 from pathlib import Path
 
 from .show_your_work.project import ProjectError
@@ -147,12 +150,35 @@ def slash(raw_args: str) -> str:
         return f"Show Your Work: {str(exc).strip(chr(39))}"
 
 
+EXPORT_NAME = "show-your-work-review.md"
+
+
 def write_export(root: Path) -> Path:
+    """Write the review report into the project.
+
+    A repo could plant ``show-your-work-review.md`` as a symlink to redirect the write, so a
+    symlink is refused, and the report is written to a new temp file in the project folder and
+    ``os.replace``-d into place. ``os.replace`` swaps the directory entry and never follows a
+    symlink at the destination, so even one created between the check and the write is replaced,
+    not written through.
+    """
     svc = service()
     board = svc.board(root)
     md = render_markdown(board, svc.runs(root, limit=10))
-    out = Path(board["project"]) / "show-your-work-review.md"
-    out.write_text(md, encoding="utf-8")
+    project = Path(board["project"])
+    out = project / EXPORT_NAME
+    if out.is_symlink():
+        raise ProjectError(f"{EXPORT_NAME} is a symlink; refusing to write through it (remove it and export again)")
+    fd, tmp = tempfile.mkstemp(dir=project, prefix=f".{EXPORT_NAME}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(md)
+        os.chmod(tmp, 0o644)  # mkstemp creates 0600; keep the report readable like an ordinary file
+        os.replace(tmp, out)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
     return out
 
 

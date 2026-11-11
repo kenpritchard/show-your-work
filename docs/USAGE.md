@@ -2,7 +2,7 @@
 
 This guide covers everything you need to use the plugin day to day: installing it, pointing it at the requirements you already have (a ticket, a bug report, a spec), running the agent workflow, reading the board, signing off, and fixing the problems people actually hit. The [README](../README.md) is the short version.
 
-Applies to **v0.2.0** on Hermes Agent **v0.23.0 or later**.
+Applies to **v0.2.1** on Hermes Agent **v0.23.0 or later**.
 
 ## Contents
 
@@ -472,7 +472,7 @@ The page refreshes every 5 seconds, so a code edit or a new import shows up with
 hermes syw export [path]    # in a terminal
 ```
 
-Or click **Export review report** in Desktop. It writes `show-your-work-review.md` into the project folder, overwriting the previous export. It contains:
+Or click **Export review report** in Desktop. It writes `show-your-work-review.md` into the project folder, overwriting the previous export. If that name is a symlink, the export is refused, so a repo can't redirect the write elsewhere; delete the link and export again. It contains:
 
 - the project, criteria file, tracked-file count and hash
 - the latest run (ID, time, report path, provenance, report hash)
@@ -570,6 +570,8 @@ These are deliberate trade-offs or known gaps. Know them before you rely on the 
 | `not valid JUnit XML: unexpected root <...>` | The file isn't a JUnit report. In a folder import, such files are skipped with a warning; if **all** files are like that you get `no JUnit reports in folder`. |
 | `report refused: unsafe XML` | The report uses XML entities. Regenerate it with a standard reporter. |
 | `report too large` | Over 5 MB per file (50 MB per folder). Split the run or trim captured output in the report. |
+| `criteria file too large` | The criteria file is over 5 MB. Point `criteria_file` at the requirements only, not a whole log or export. |
+| `... is a symlink; refusing to write through it` | `show-your-work-review.md` in the project is a symlink. Delete it and export again. |
 | Linked requirement shows `not run` | The ID doesn't match. `syw_link` warns about this at link time. In the sample, linking `tests.test_tip::test_rounding` when the real ID is `test_rounds_to_cents` does exactly this. |
 | Test evidence: "could not find this test's source file" | The class name doesn't map to a file in the project (generated tests, unusual layout). Open the file yourself. |
 | Test evidence: no diff, "no base set" | Add `base = "origin/main"` (or your target branch) to `syw.toml`, or give the branch an upstream. |

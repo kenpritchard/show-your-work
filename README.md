@@ -65,7 +65,7 @@ Or try the sample in [`examples/tip-calculator`](examples/tip-calculator): a del
 
 - **Reads** the `syw.toml`, the criteria file, the files matched by `tracked` (to hash them), and JUnit XML files or folders you or the agent name. All of these must be inside the project folder. Symlinks and paths outside the project are refused. Reports are capped at 5 MB per file (500 files / 50 MB per folder) and parsed with `defusedxml` (entities refused).
 - **Stores** links, imported results (test ids, outcomes, failure messages up to 2,000 chars), report hashes, file-set hashes and reviews in SQLite at `<HERMES_HOME>/plugin-data/show-your-work/data.db`. Runs and reviews are append-only.
-- **Writes** `show-your-work-review.md` into the project folder only when you export.
+- **Writes** `show-your-work-review.md` into the project folder only when you export (refused if that name is a symlink; written to a temp file and moved into place). Criteria files are capped at 5 MB.
 - **Runs no tests and makes no network or model calls.** The only process it starts is read-only `git` (`rev-parse`, `merge-base`, `diff`, `show`, `ls-files`) in the project folder, to show a test's source and diff when you open it for review. No telemetry.
 
 ## Limits

@@ -18,6 +18,7 @@ from .criteria import Criterion, parse_criteria
 
 CONFIG_NAME = "syw.toml"
 MAX_TRACKED_FILES = 5000
+MAX_CRITERIA_BYTES = 5 * 1024 * 1024  # same cap as a JUnit report
 
 
 class ProjectError(ValueError):
@@ -72,6 +73,10 @@ def load_project(root: str | Path) -> Project:
         _inside(root, pattern.split("*", 1)[0] or ".", "tracked pattern")
     if not crit_path.is_file():
         raise ProjectError(f"criteria file not found: {criteria_file}")
+    if crit_path.stat().st_size > MAX_CRITERIA_BYTES:
+        raise ProjectError(
+            f"{criteria_file}: criteria file too large (limit {MAX_CRITERIA_BYTES // (1024 * 1024)} MB)"
+        )
     try:
         criteria = parse_criteria(crit_path.read_text(encoding="utf-8"))
     except ValueError as exc:

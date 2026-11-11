@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .project import Project
 
@@ -122,19 +122,41 @@ def _walk(root: Path):
             yield Path(dirpath) / f
 
 
+def _unsafe_classname(cls: str) -> bool:
+    """A classname that names a path outside the project (absolute, a drive, or ``..``).
+
+    JUnit ids come from a report the agent or a repo supplies, so they are untrusted. Refusing these
+    before any filesystem probe keeps the "not found" answer from revealing whether a file exists
+    outside the project.
+    """
+    posix = cls.replace("\\", "/")
+    return (posix.startswith("/") or bool(PureWindowsPath(cls).drive)
+            or ".." in PurePosixPath(posix).parts)
+
+
+def _project_file(root: Path, cand: Path) -> Path | None:
+    """``cand`` resolved, if it is a file inside the project; never probes outside it."""
+    resolved = cand.resolve()
+    if not resolved.is_relative_to(root):
+        return None
+    return resolved if resolved.is_file() else None
+
+
 def find_test_file(project: Project, test_id: str) -> Path | None:
     cls, _ = split_test_id(test_id)
-    if not cls:
+    if not cls or _unsafe_classname(cls):
         return None
     root = project.root
     # pytest classnames are sometimes a path already: "tests/test_tip.py" or "tests.test_tip.TestX"
-    if cls.endswith(".py") and (root / cls).is_file():
-        return (root / cls).resolve()
+    if cls.endswith(".py") and (hit := _project_file(root, root / cls)):
+        return hit
     parts = cls.split(".")
+    if any(PurePosixPath(p.replace("\\", "/")).is_absolute() for p in parts if p):
+        return None  # "a./etc/x" would join to an absolute path
     for i in range(len(parts), 0, -1):  # tests.test_tip.TestClass -> try tests/test_tip.py first by length
         cand = root.joinpath(*parts[:i]).with_suffix(".py")
-        if cand.is_file():
-            return cand.resolve()
+        if hit := _project_file(root, cand):
+            return hit
     outer = parts[-1].split("$", 1)[0]
     pkg_path = "/".join(parts[:-1] + [outer])
     stem_hits = []
